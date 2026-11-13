@@ -1,0 +1,418 @@
+{
+  "name": "mainframe-ftps",
+  "displayName": "Mainframe FTPS (z/OS)",
+  "description": "Grava automaticamente JCL/Easytrieve num PDS do z/OS ao guardar, submete jobs e mostra o estado e o spool, numa única sessão FTPS com keepalive e login por PIN + token.",
+  "version": "0.2.0",
+  "publisher": "jmgvieira",
+  "license": "MIT",
+  "icon": "icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jmgvieira/mainframe-ftps.git"
+  },
+  "bugs": {
+    "url": "https://github.com/jmgvieira/mainframe-ftps/issues"
+  },
+  "homepage": "https://github.com/jmgvieira/mainframe-ftps#readme",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "mainframe",
+    "z/OS",
+    "JCL",
+    "FTPS",
+    "Easytrieve",
+    "JES"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "mainframeFtps.connect",
+        "title": "Ligar ao mainframe",
+        "category": "Mainframe",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "mainframeFtps.disconnect",
+        "title": "Desligar do mainframe",
+        "category": "Mainframe",
+        "icon": "$(debug-disconnect)"
+      },
+      {
+        "command": "mainframeFtps.upload",
+        "title": "Gravar ficheiro no mainframe",
+        "category": "Mainframe",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "mainframeFtps.setTarget",
+        "title": "Alterar destino (PDS/membro) do ficheiro",
+        "category": "Mainframe"
+      },
+      {
+        "command": "mainframeFtps.clearTarget",
+        "title": "Remover destino do ficheiro",
+        "category": "Mainframe"
+      },
+      {
+        "command": "mainframeFtps.submit",
+        "title": "Submeter JCL",
+        "category": "Mainframe",
+        "icon": "$(rocket)"
+      },
+      {
+        "command": "mainframeFtps.jobStatus",
+        "title": "Ver estado de um job",
+        "category": "Mainframe",
+        "icon": "$(info)"
+      },
+      {
+        "command": "mainframeFtps.openSpool",
+        "title": "Ver spool do job",
+        "category": "Mainframe",
+        "icon": "$(output)"
+      },
+      {
+        "command": "mainframeFtps.listJobs",
+        "title": "Listar jobs no JES",
+        "category": "Mainframe",
+        "icon": "$(list-unordered)"
+      },
+      {
+        "command": "mainframeFtps.refreshJobs",
+        "title": "Atualizar estado dos jobs",
+        "category": "Mainframe",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "mainframeFtps.clearJobs",
+        "title": "Limpar lista de jobs",
+        "category": "Mainframe",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "mainframeFtps.removeJob",
+        "title": "Remover da lista",
+        "category": "Mainframe"
+      },
+      {
+        "command": "mainframeFtps.purgeJob",
+        "title": "Apagar job do JES (purge)",
+        "category": "Mainframe"
+      },
+      {
+        "command": "mainframeFtps.openMember",
+        "title": "Abrir membro do mainframe…",
+        "category": "Mainframe",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "mainframeFtps.forgetPin",
+        "title": "Esquecer PIN guardado",
+        "category": "Mainframe"
+      },
+      {
+        "command": "mainframeFtps.showLog",
+        "title": "Mostrar log",
+        "category": "Mainframe"
+      }
+    ],
+    "views": {
+      "explorer": [
+        {
+          "id": "mainframeFtps.jobs",
+          "name": "Jobs mainframe"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "mainframeFtps.jobs",
+        "contents": "Ainda não submeteu jobs nesta pasta.\n[Ligar ao mainframe](command:mainframeFtps.connect)\n[Listar jobs no JES](command:mainframeFtps.listJobs)\n[Abrir membro do mainframe](command:mainframeFtps.openMember)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "mainframeFtps.refreshJobs",
+          "when": "view == mainframeFtps.jobs",
+          "group": "navigation@1"
+        },
+        {
+          "command": "mainframeFtps.listJobs",
+          "when": "view == mainframeFtps.jobs",
+          "group": "navigation@2"
+        },
+        {
+          "command": "mainframeFtps.clearJobs",
+          "when": "view == mainframeFtps.jobs",
+          "group": "navigation@3"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "mainframeFtps.openSpool",
+          "when": "viewItem == mfJob",
+          "group": "inline@1"
+        },
+        {
+          "command": "mainframeFtps.jobStatus",
+          "when": "viewItem == mfJob",
+          "group": "inline@2"
+        },
+        {
+          "command": "mainframeFtps.removeJob",
+          "when": "viewItem == mfJob",
+          "group": "z@1"
+        },
+        {
+          "command": "mainframeFtps.purgeJob",
+          "when": "viewItem == mfJob",
+          "group": "z@2"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "mainframeFtps.submit",
+          "when": "resourceExtname =~ /^\\.(jcl|JCL)$/",
+          "group": "navigation@50"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "mainframeFtps.submit",
+          "group": "mainframe@1"
+        },
+        {
+          "command": "mainframeFtps.upload",
+          "group": "mainframe@2"
+        },
+        {
+          "command": "mainframeFtps.setTarget",
+          "group": "mainframe@3"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "mainframeFtps.upload",
+          "when": "!explorerResourceIsFolder",
+          "group": "mainframe@1"
+        },
+        {
+          "command": "mainframeFtps.submit",
+          "when": "!explorerResourceIsFolder",
+          "group": "mainframe@2"
+        },
+        {
+          "command": "mainframeFtps.setTarget",
+          "when": "!explorerResourceIsFolder",
+          "group": "mainframe@3"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "mainframeFtps.removeJob",
+          "when": "false"
+        },
+        {
+          "command": "mainframeFtps.purgeJob",
+          "when": "false"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "mainframeFtps.submit",
+        "key": "ctrl+alt+j",
+        "mac": "cmd+alt+j",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "mainframeFtps.jobStatus",
+        "key": "ctrl+alt+k",
+        "mac": "cmd+alt+k"
+      }
+    ],
+    "configuration": {
+      "title": "Mainframe FTPS",
+      "properties": {
+        "mainframeFtps.host": {
+          "type": "string",
+          "default": "",
+          "order": 1,
+          "description": "Endereço do servidor FTP do z/OS."
+        },
+        "mainframeFtps.port": {
+          "type": "number",
+          "default": 990,
+          "order": 2,
+          "description": "Porta FTPS."
+        },
+        "mainframeFtps.tlsMode": {
+          "type": "string",
+          "enum": [
+            "explicit",
+            "implicit"
+          ],
+          "default": "explicit",
+          "order": 3,
+          "enumDescriptions": [
+            "FTPS explícito (AUTH TLS após ligar)",
+            "FTPS implícito (TLS logo à ligação)"
+          ],
+          "description": "Modo TLS. Se o login falhar logo no início com timeout, experimente o outro modo."
+        },
+        "mainframeFtps.rejectUnauthorizedCertificates": {
+          "type": "boolean",
+          "default": true,
+          "order": 4,
+          "description": "Recusar certificados não confiáveis. Desative só se o certificado do mainframe for de uma CA interna não instalada no Windows."
+        },
+        "mainframeFtps.tlsServerName": {
+          "type": "string",
+          "default": "",
+          "order": 5,
+          "description": "Nome do servidor para SNI/validação do certificado (opcional)."
+        },
+        "mainframeFtps.user": {
+          "type": "string",
+          "default": "",
+          "order": 6,
+          "description": "Utilizador TSO. Se vazio, é pedido ao ligar."
+        },
+        "mainframeFtps.passcodeOrder": {
+          "type": "string",
+          "enum": [
+            "pinThenToken",
+            "tokenThenPin"
+          ],
+          "default": "pinThenToken",
+          "order": 7,
+          "enumDescriptions": [
+            "Password = PIN fixo + token",
+            "Password = token + PIN fixo"
+          ],
+          "description": "Como compor a password a partir do PIN fixo e do token."
+        },
+        "mainframeFtps.rememberPin": {
+          "type": "boolean",
+          "default": false,
+          "order": 8,
+          "description": "Guardar o PIN fixo no cofre de credenciais do sistema (o token é sempre pedido)."
+        },
+        "mainframeFtps.keepAliveSeconds": {
+          "type": "number",
+          "default": 60,
+          "minimum": 0,
+          "order": 9,
+          "description": "Intervalo do NOOP de keepalive em segundos (0 = desligado). Deve ser bem inferior ao timeout do servidor (~4 min)."
+        },
+        "mainframeFtps.idleDisconnectMinutes": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "order": 10,
+          "description": "Desligar após N minutos sem operações do utilizador (0 = nunca)."
+        },
+        "mainframeFtps.timeoutSeconds": {
+          "type": "number",
+          "default": 30,
+          "order": 11,
+          "description": "Timeout de cada operação FTP."
+        },
+        "mainframeFtps.siteCommands": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "order": 12,
+          "markdownDescription": "Comandos `SITE` enviados logo após o login, sem a palavra SITE. Ex.: `SBDATACONN=(IBM-1047,ISO8859-1)`, `TRAILINGBLANKS`."
+        },
+        "mainframeFtps.autoUploadOnSave": {
+          "type": "boolean",
+          "default": true,
+          "order": 13,
+          "description": "Gravar no mainframe sempre que o ficheiro é guardado."
+        },
+        "mainframeFtps.fileExtensions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            ".jcl",
+            ".ezt",
+            ".cbl",
+            ".cpy",
+            ".proc"
+          ],
+          "order": 14,
+          "description": "Extensões para as quais é perguntado o destino na primeira gravação."
+        },
+        "mainframeFtps.hostCodePage": {
+          "type": "string",
+          "default": "IBM-1147",
+          "order": 15,
+          "markdownDescription": "Código de página EBCDIC do mainframe. É enviado após o login como `SITE SBDATACONN=(<este>,<transferEncoding>)`. Vazio = usar a configuração do servidor. IBM-1147 = França com €."
+        },
+        "mainframeFtps.transferEncoding": {
+          "type": "string",
+          "enum": [
+            "iso8859-15",
+            "latin1",
+            "utf8"
+          ],
+          "default": "iso8859-15",
+          "order": 16,
+          "enumDescriptions": [
+            "ISO-8859-15 (Latin-9, com €) – recomendado com IBM-1147",
+            "ISO-8859-1 (Latin-1, sem €)",
+            "UTF-8 (requer configuração MBCS no servidor)"
+          ],
+          "description": "Codificação do lado do PC na transferência ASCII."
+        },
+        "mainframeFtps.recordLength": {
+          "type": "number",
+          "default": 80,
+          "order": 17,
+          "description": "LRECL esperado; avisa se houver linhas mais compridas."
+        },
+        "mainframeFtps.jobPollSeconds": {
+          "type": "number",
+          "default": 5,
+          "order": 18,
+          "description": "Intervalo de consulta do estado de um job submetido."
+        },
+        "mainframeFtps.jobPollMaxMinutes": {
+          "type": "number",
+          "default": 10,
+          "order": 19,
+          "description": "Tempo máximo a acompanhar um job submetido."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc --noEmit -p . && esbuild src/extension.ts --bundle --platform=node --target=node18 --external:vscode --outfile=dist/extension.js",
+    "package": "npm run compile && vsce package --no-dependencies"
+  },
+  "dependencies": {
+    "basic-ftp": "^6.2.6"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "1.85.0",
+    "@vscode/vsce": "^3.0.0",
+    "esbuild": "^0.28.0",
+    "typescript": "^5.0.0"
+  }
+}
