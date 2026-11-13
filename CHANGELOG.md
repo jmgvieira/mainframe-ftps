@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0
+- Nova vista **Mainframe** na barra de atividades, com filtros de data sets (como no ISPF 3.4), PDS e membros.
+- Abrir membros e sequenciais com um clique, já associados para gravação automática.
+- Criar membros e data sets (PDSE, PDS, PS; também "igual a este"), renomear, apagar, submeter e copiar o nome.
+- Indicador de autenticação na barra de estado (verde = ligado, cinzento = desligado), com o último keepalive.
+- Deteção de ligação fechada pelo servidor.
+
 ## 0.2.1
 - Publicação no VS Code Marketplace (publisher JorgeMiguel).
 

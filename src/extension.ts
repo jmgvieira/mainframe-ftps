@@ -4,12 +4,15 @@ import { FtpSession, CancelledError, errText } from "./session";
 import { TargetMap, IGNORE, validateDsn, validateMember, suggestMember, pdsOf, memberOf } from "./mapping";
 import { JobsProvider, JobInfo, parseJobList, parseJobLine, severity } from "./jobs";
 import { getConfig } from "./config";
+import { DatasetsProvider } from "./datasets";
+import { registerBrowse } from "./browse";
 import { encode, decode, unsupported } from "./codec";
 
 let session: FtpSession;
 let targets: TargetMap;
 let jobs: JobsProvider;
 let log: vscode.OutputChannel;
+let datasets: DatasetsProvider;
 
 const SPOOL_SCHEME = "mfspool";
 
@@ -19,7 +22,17 @@ export function activate(context: vscode.ExtensionContext) {
   targets = new TargetMap(context);
   jobs = new JobsProvider(context, session, log);
 
+  datasets = new DatasetsProvider(session);
   const tree = vscode.window.createTreeView("mainframeFtps.jobs", { treeDataProvider: jobs });
+  vscode.commands.executeCommand("setContext", "mainframeFtps.connected", false);
+
+  const submitJcl = async (data: Buffer, jobName: string, source: string) => {
+    const { jobId } = await session.submit(data);
+    const job = await jobs.add(jobId, jobName, source);
+    tree.reveal(job, { select: true, focus: false }).then(undefined, () => undefined);
+    vscode.window.setStatusBarMessage(`$(rocket) ${jobName} ${jobId} submetido`, 5000);
+    log.appendLine(`Job ${jobName} ${jobId} submetido a partir de ${source}`);
+  };
 
   // Spool como documento só de leitura: mfspool:/JOB12345/NOME.log
   const spoolProvider: vscode.TextDocumentContentProvider = {
@@ -79,11 +92,7 @@ export function activate(context: vscode.ExtensionContext) {
       }
       const data = await prepareText(doc, "submeter");
       const jobName = /^\/\/(\S+)\s+JOB\b/m.exec(doc.getText())?.[1]?.toUpperCase() ?? "";
-      const { jobId } = await session.submit(data);
-      const job = await jobs.add(jobId, jobName, path.basename(doc.fileName));
-      tree.reveal(job, { select: true, focus: false }).then(undefined, () => undefined);
-      vscode.window.setStatusBarMessage(`$(rocket) ${jobName} ${jobId} submetido`, 5000);
-      log.appendLine(`Job ${jobName} ${jobId} submetido a partir de ${doc.fileName}`);
+      await submitJcl(data, jobName, path.basename(doc.fileName));
     }),
     cmd("mainframeFtps.jobStatus", async (job?: JobInfo) => {
       job = job ?? (await pickJob());
@@ -160,6 +169,8 @@ export function activate(context: vscode.ExtensionContext) {
     }),
     cmd("mainframeFtps.openMember", async () => openMember(context)),
     cmd("mainframeFtps.showLog", async () => log.show()),
+    datasets,
+    ...registerBrowse({ context, session, targets, datasets, log, submit: submitJcl, cmd }),
   );
 }
 
@@ -228,6 +239,9 @@ async function upload(doc: vscode.TextDocument, target: string): Promise<void> {
     () => session.uploadText(target, data)
   );
   vscode.window.setStatusBarMessage(`$(cloud-upload) Gravado em ${target}`, 4000);
+  if (memberOf(target)) {
+    datasets.refreshPds(pdsOf(target));
+  }
 }
 
 /** Converte o texto do editor em registos para o mainframe, avisando de problemas. */

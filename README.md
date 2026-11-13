@@ -35,6 +35,35 @@ Exemplo de `settings.json`:
 - Se houver um login recusado (530), o PIN guardado é apagado e a ligação não é repetida automaticamente,
   para evitar revogar o utilizador no RACF.
 
+## Indicador de autenticação
+
+- Na barra de estado (canto inferior esquerdo):
+  - **verde** `✔ MF U12345`: autenticado;
+  - **cinzento** `○ MF`: não autenticado;
+  - `⟳ MF a ligar…`: a autenticar.
+- Ao passar o rato aparece desde quando está ligado e a hora do último keepalive. Um clique liga ou desliga.
+- O topo da vista **Data sets** mostra o mesmo estado (`● U12345@host` ou `○ desligado`).
+
+## Navegar nos data sets
+
+- O ícone **Mainframe** na barra de atividades (à esquerda) abre a vista **Data sets** e a vista **Jobs**.
+- **Adicionar filtro**, por exemplo `U12345.*`, lista os data sets como no ISPF 3.4.
+  - Um PDS expande-se e mostra os membros.
+  - Um clique num membro ou num sequencial abre-o no editor, já associado. O `Ctrl+S` grava de volta no mainframe.
+- Os ficheiros abertos a partir da vista ficam em `mainframe/<PDS>/<MEMBRO>.<ext>`, dentro da pasta aberta no VS Code.
+  A pasta pode ser mudada em `localFolder`. A extensão do ficheiro vem do último qualificador do data set
+  (JCL/CNTL/PROC → `.jcl`, EZT → `.ezt`, …), e pode ser configurada em `qualifierExtensions`.
+- Botão direito:
+  - **Novo membro**;
+  - **Novo data set** (PDSE, PDS ou sequencial; RECFM, LRECL e espaço);
+  - **Novo data set igual a este**;
+  - **Renomear**;
+  - **Apagar**, sempre com confirmação;
+  - **Submeter**;
+  - **Copiar nome**.
+- Data sets migrados (HSM) aparecem com uma nuvem. Ao abri-los é feito o recall.
+- Nomes com caracteres nacionais (`#`, `@`) aparecem corretamente, mesmo com o código de página IBM-1147.
+
 ## Gravar no mainframe
 
 - Na **primeira gravação** de um `.jcl`, `.ezt`, `.cbl`, `.cpy` ou `.proc`, a extensão pergunta o

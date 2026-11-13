@@ -1,8 +1,8 @@
 {
   "name": "mainframe-ftps",
   "displayName": "Mainframe FTPS (z/OS)",
-  "description": "Grava automaticamente JCL/Easytrieve num PDS do z/OS ao guardar, submete jobs e mostra o estado e o spool, numa única sessão FTPS com keepalive e login por PIN + token.",
-  "version": "0.2.1",
+  "description": "Navega nos data sets do z/OS, edita membros com gravação automática no PDS, submete jobs e mostra o spool, numa única sessão FTPS com keepalive e login por PIN + token.",
+  "version": "0.3.0",
   "publisher": "JorgeMiguel",
   "license": "MIT",
   "icon": "icon.png",
@@ -123,17 +123,99 @@
         "command": "mainframeFtps.showLog",
         "title": "Mostrar log",
         "category": "Mainframe"
+      },
+      {
+        "command": "mainframeFtps.addFilter",
+        "title": "Adicionar filtro de data sets",
+        "category": "Mainframe",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "mainframeFtps.editFilter",
+        "title": "Alterar filtro",
+        "category": "Mainframe",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "mainframeFtps.removeFilter",
+        "title": "Remover filtro",
+        "category": "Mainframe",
+        "icon": "$(close)"
+      },
+      {
+        "command": "mainframeFtps.refreshDatasets",
+        "title": "Atualizar",
+        "category": "Mainframe",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "mainframeFtps.openDataset",
+        "title": "Abrir",
+        "category": "Mainframe",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "mainframeFtps.newMember",
+        "title": "Novo membro…",
+        "category": "Mainframe",
+        "icon": "$(new-file)"
+      },
+      {
+        "command": "mainframeFtps.newDataset",
+        "title": "Novo data set…",
+        "category": "Mainframe",
+        "icon": "$(new-folder)"
+      },
+      {
+        "command": "mainframeFtps.renameItem",
+        "title": "Renomear…",
+        "category": "Mainframe"
+      },
+      {
+        "command": "mainframeFtps.deleteItem",
+        "title": "Apagar…",
+        "category": "Mainframe"
+      },
+      {
+        "command": "mainframeFtps.submitMember",
+        "title": "Submeter",
+        "category": "Mainframe",
+        "icon": "$(rocket)"
+      },
+      {
+        "command": "mainframeFtps.copyName",
+        "title": "Copiar nome",
+        "category": "Mainframe"
+      },
+      {
+        "command": "mainframeFtps.newDatasetLike",
+        "title": "Novo data set igual a este…",
+        "category": "Mainframe"
       }
     ],
     "views": {
-      "explorer": [
+      "mainframe": [
+        {
+          "id": "mainframeFtps.datasets",
+          "name": "Data sets"
+        },
         {
           "id": "mainframeFtps.jobs",
-          "name": "Jobs mainframe"
+          "name": "Jobs"
         }
       ]
     },
     "viewsWelcome": [
+      {
+        "view": "mainframeFtps.datasets",
+        "when": "!mainframeFtps.connected",
+        "contents": "Não autenticado no mainframe.\n[$(plug) Ligar (PIN + token)](command:mainframeFtps.connect)"
+      },
+      {
+        "view": "mainframeFtps.datasets",
+        "when": "mainframeFtps.connected",
+        "contents": "Adicione um filtro para ver os seus data sets, como no ISPF 3.4.\n[$(filter) Adicionar filtro](command:mainframeFtps.addFilter)\n[$(new-folder) Novo data set](command:mainframeFtps.newDataset)"
+      },
       {
         "view": "mainframeFtps.jobs",
         "contents": "Ainda não submeteu jobs nesta pasta.\n[Ligar ao mainframe](command:mainframeFtps.connect)\n[Listar jobs no JES](command:mainframeFtps.listJobs)\n[Abrir membro do mainframe](command:mainframeFtps.openMember)"
@@ -141,6 +223,31 @@
     ],
     "menus": {
       "view/title": [
+        {
+          "command": "mainframeFtps.connect",
+          "when": "view == mainframeFtps.datasets && !mainframeFtps.connected",
+          "group": "navigation@0"
+        },
+        {
+          "command": "mainframeFtps.disconnect",
+          "when": "view == mainframeFtps.datasets && mainframeFtps.connected",
+          "group": "navigation@0"
+        },
+        {
+          "command": "mainframeFtps.addFilter",
+          "when": "view == mainframeFtps.datasets",
+          "group": "navigation@1"
+        },
+        {
+          "command": "mainframeFtps.newDataset",
+          "when": "view == mainframeFtps.datasets",
+          "group": "navigation@2"
+        },
+        {
+          "command": "mainframeFtps.refreshDatasets",
+          "when": "view == mainframeFtps.datasets",
+          "group": "navigation@3"
+        },
         {
           "command": "mainframeFtps.refreshJobs",
           "when": "view == mainframeFtps.jobs",
@@ -177,6 +284,76 @@
           "command": "mainframeFtps.purgeJob",
           "when": "viewItem == mfJob",
           "group": "z@2"
+        },
+        {
+          "command": "mainframeFtps.refreshDatasets",
+          "when": "view == mainframeFtps.datasets && viewItem == mfFilter",
+          "group": "inline@1"
+        },
+        {
+          "command": "mainframeFtps.editFilter",
+          "when": "viewItem == mfFilter",
+          "group": "inline@2"
+        },
+        {
+          "command": "mainframeFtps.removeFilter",
+          "when": "viewItem == mfFilter",
+          "group": "inline@3"
+        },
+        {
+          "command": "mainframeFtps.newDataset",
+          "when": "viewItem == mfFilter",
+          "group": "1@1"
+        },
+        {
+          "command": "mainframeFtps.newMember",
+          "when": "viewItem == mfDsPO",
+          "group": "inline@1"
+        },
+        {
+          "command": "mainframeFtps.refreshDatasets",
+          "when": "viewItem == mfDsPO",
+          "group": "inline@2"
+        },
+        {
+          "command": "mainframeFtps.newMember",
+          "when": "viewItem == mfDsPO",
+          "group": "1@1"
+        },
+        {
+          "command": "mainframeFtps.newDatasetLike",
+          "when": "viewItem =~ /^mfDs(PO|PS)$/",
+          "group": "1@2"
+        },
+        {
+          "command": "mainframeFtps.openDataset",
+          "when": "viewItem =~ /^(mfDsPS|mfMember|mfDsMigrated)$/",
+          "group": "1@0"
+        },
+        {
+          "command": "mainframeFtps.submitMember",
+          "when": "viewItem =~ /^(mfDsPS|mfMember)$/",
+          "group": "inline@1"
+        },
+        {
+          "command": "mainframeFtps.submitMember",
+          "when": "viewItem =~ /^(mfDsPS|mfMember)$/",
+          "group": "1@3"
+        },
+        {
+          "command": "mainframeFtps.copyName",
+          "when": "viewItem =~ /^(mfDs.*|mfMember)$/",
+          "group": "2@1"
+        },
+        {
+          "command": "mainframeFtps.renameItem",
+          "when": "viewItem =~ /^(mfDsPO|mfDsPS|mfMember)$/",
+          "group": "2@2"
+        },
+        {
+          "command": "mainframeFtps.deleteItem",
+          "when": "viewItem =~ /^(mfDsPO|mfDsPS|mfMember)$/",
+          "group": "3@1"
         }
       ],
       "editor/title": [
@@ -224,6 +401,38 @@
         },
         {
           "command": "mainframeFtps.purgeJob",
+          "when": "false"
+        },
+        {
+          "command": "mainframeFtps.editFilter",
+          "when": "false"
+        },
+        {
+          "command": "mainframeFtps.removeFilter",
+          "when": "false"
+        },
+        {
+          "command": "mainframeFtps.openDataset",
+          "when": "false"
+        },
+        {
+          "command": "mainframeFtps.renameItem",
+          "when": "false"
+        },
+        {
+          "command": "mainframeFtps.deleteItem",
+          "when": "false"
+        },
+        {
+          "command": "mainframeFtps.submitMember",
+          "when": "false"
+        },
+        {
+          "command": "mainframeFtps.copyName",
+          "when": "false"
+        },
+        {
+          "command": "mainframeFtps.newDatasetLike",
           "when": "false"
         }
       ]
@@ -397,9 +606,64 @@
           "default": 10,
           "order": 19,
           "description": "Tempo máximo a acompanhar um job submetido."
+        },
+        "mainframeFtps.datasetFilters": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "order": 20,
+          "description": "Filtros de data sets mostrados na vista Mainframe (ex.: U12345.*)."
+        },
+        "mainframeFtps.localFolder": {
+          "type": "string",
+          "default": "",
+          "order": 21,
+          "markdownDescription": "Pasta local onde ficam os membros abertos a partir da vista. Vazio = `mainframe/` dentro da pasta aberta no VS Code. Pode usar `${workspaceFolder}`."
+        },
+        "mainframeFtps.qualifierExtensions": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "order": 22,
+          "markdownDescription": "Extensão local por qualificador do data set, além das predefinidas (JCL/CNTL/PROC → .jcl, EZT/EASY → .ezt, COBOL → .cbl, COPY → .cpy). Ex.: `{ \"JOBLIB\": \".jcl\" }`."
         }
       }
-    }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "mainframe",
+          "title": "Mainframe",
+          "icon": "resources/mainframe.svg"
+        }
+      ]
+    },
+    "colors": [
+      {
+        "id": "mainframeFtps.connectedForeground",
+        "description": "Cor do indicador de autenticação quando ligado.",
+        "defaults": {
+          "dark": "#3FB950",
+          "light": "#1A7F37",
+          "highContrast": "#3FB950",
+          "highContrastLight": "#1A7F37"
+        }
+      },
+      {
+        "id": "mainframeFtps.disconnectedForeground",
+        "description": "Cor do indicador de autenticação quando desligado.",
+        "defaults": {
+          "dark": "#8B949E",
+          "light": "#6E7781",
+          "highContrast": "#FFFFFF",
+          "highContrastLight": "#000000"
+        }
+      }
+    ]
   },
   "scripts": {
     "compile": "tsc --noEmit -p . && esbuild src/extension.ts --bundle --platform=node --target=node18 --external:vscode --outfile=dist/extension.js",

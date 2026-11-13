@@ -23,6 +23,8 @@ export class FtpSession implements vscode.Disposable {
   private readonly _onDidChangeState = new vscode.EventEmitter<boolean>();
   readonly onDidChangeState = this._onDidChangeState.event;
   private userId = "";
+  private connectedSince = 0;
+  private lastKeepAlive = 0;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -49,7 +51,11 @@ export class FtpSession implements vscode.Disposable {
       return;
     }
     if (!this.connecting) {
-      this.connecting = this.connect().finally(() => (this.connecting = undefined));
+      this.connecting = this.connect().finally(() => {
+        this.connecting = undefined;
+        this.updateStatus();
+      });
+      this.updateStatus();
     }
     return this.connecting;
   }
@@ -84,7 +90,8 @@ export class FtpSession implements vscode.Disposable {
     this.closeClient();
     const client = new Client(cfg.timeoutSeconds * 1000);
     client.ftp.verbose = false;
-    this.statusItem.text = "$(sync~spin) MF: a ligar…";
+    // listagens chegam no código de página da ligação de dados (ISO-8859-x), não em UTF-8
+    client.ftp.encoding = "latin1";
 
     try {
       this.log.appendLine(
@@ -109,6 +116,8 @@ export class FtpSession implements vscode.Disposable {
       }
       this.client = client;
       this.userId = user.toUpperCase();
+      this.connectedSince = Date.now();
+      this.lastKeepAlive = Date.now();
       this.lastActivity = Date.now();
       this.startKeepAlive();
       this.log.appendLine(`[${ts()}] Ligado.`);
@@ -212,6 +221,11 @@ export class FtpSession implements vscode.Disposable {
 
   private keepAliveTick(): void {
     if (!this.isConnected) {
+      if (this.client) {
+        // o servidor fechou a ligação sem avisar
+        this.log.appendLine(`[${ts()}] A ligação foi fechada pelo servidor.`);
+        this.disconnect();
+      }
       return;
     }
     const cfg = getConfig();
@@ -228,6 +242,8 @@ export class FtpSession implements vscode.Disposable {
       }
       try {
         await this.client.send("NOOP");
+        this.lastKeepAlive = Date.now();
+        this.updateStatus();
       } catch (err) {
         this.log.appendLine(`[${ts()}] Keepalive falhou: ${errText(err)}`);
         this.disconnect();
@@ -303,21 +319,101 @@ export class FtpSession implements vscode.Disposable {
     });
   }
 
-  /** Lista os membros de um PDS. */
-  async listMembers(pds: string): Promise<string[]> {
+  /**
+   * Listagem MVS de data sets (como o ISPF 3.4). Devolve o texto em bruto e o
+   * diretório de trabalho usado, para completar nomes relativos.
+   */
+  async listDatasetsRaw(pattern: string): Promise<{ raw: string; cwd: string }> {
+    return this.run(`listar ${pattern}`, async (c) => {
+      await this.sendLogged(c, "SITE FILETYPE=SEQ");
+      const p = pattern.trim().toUpperCase().replace(/^'+|'+$/g, "");
+      const wild = p.search(/[*%]/);
+      const fixed = wild >= 0 ? p.slice(0, wild) : p;
+      const dot = fixed.lastIndexOf(".");
+      try {
+        if (dot > 0) {
+          const cwd = p.slice(0, dot + 1);
+          await c.cd(`'${cwd}'`);
+          return { raw: await rawList(c, `LIST ${p.slice(dot + 1) || "*"}`), cwd };
+        }
+        return { raw: await rawList(c, `LIST '${p}'`), cwd: "" };
+      } catch (err) {
+        if (err instanceof FTPError && err.code === 550) {
+          return { raw: "", cwd: "" }; // nenhum data set
+        }
+        throw err;
+      } finally {
+        await this.cdHome(c);
+      }
+    });
+  }
+
+  /** Listagem dos membros de um PDS (com estatísticas ISPF quando existem). */
+  async listMembersRaw(pds: string): Promise<string> {
     return this.run(`listar ${pds}`, async (c) => {
       await this.sendLogged(c, "SITE FILETYPE=SEQ");
       await c.cd(quoteDsn(pds));
       try {
-        const raw = await rawList(c, "NLST");
-        return raw
-          .split(/\r?\n/)
-          .map((l) => l.trim())
-          .filter((l) => l.length > 0);
+        return await rawList(c, "LIST");
+      } catch (err) {
+        if (err instanceof FTPError && err.code === 550) {
+          return ""; // PDS vazio
+        }
+        throw err;
       } finally {
-        await c.cd(`'${this.userId}.'`).catch(() => undefined);
+        await this.cdHome(c);
       }
     });
+  }
+
+  /** Lista só os nomes dos membros. */
+  async listMembers(pds: string): Promise<string[]> {
+    const raw = await this.listMembersRaw(pds);
+    return raw
+      .split(/\r?\n/)
+      .map((l) => (l.trim().split(/\s+/)[0] ?? "").replace(/£/g, "#").replace(/[àÀ]/g, "@").toUpperCase())
+      .filter((n) => n && n !== "NAME" && /^[A-Z#@$][A-Z0-9#@$]{0,7}$/.test(n));
+  }
+
+  /** Aloca um data set (PDS, PDSE ou sequencial). */
+  async allocate(dsn: string, o: AllocOptions): Promise<void> {
+    await this.run(`alocar ${dsn}`, async (c) => {
+      await this.sendLogged(c, "SITE FILETYPE=SEQ");
+      const blk = o.recfm.startsWith("V") ? 27998 : Math.floor(27998 / o.lrecl) * o.lrecl;
+      await this.sendLogged(c, `SITE RECFM=${o.recfm} LRECL=${o.lrecl} BLKSIZE=${blk}`);
+      await this.sendLogged(c, `SITE ${o.unit} PRIMARY=${o.primary} SECONDARY=${o.secondary}`);
+      if (o.dsorg === "PO") {
+        await this.sendLogged(c, `SITE DIRECTORY=${o.directory}`);
+        await c.send(`SITE DSNTYPE=${o.pdse ? "LIBRARY" : "PDS"}`).catch(() => undefined);
+        await this.sendLogged(c, `MKD ${quoteDsn(dsn)}`);
+      } else {
+        await c.send("SITE DSNTYPE=BASIC").catch(() => undefined);
+        await c.send("TYPE A");
+        await c.uploadFrom(Readable.from([Buffer.alloc(0)]), quoteDsn(dsn));
+      }
+      this.log.appendLine(`[${ts()}] Alocado ${dsn}`);
+    });
+  }
+
+  /** Renomeia um data set ou membro (nomes completos, ex.: A.B(X) -> A.B(Y)). */
+  async rename(from: string, to: string): Promise<void> {
+    await this.run(`renomear ${from}`, async (c) => {
+      await this.sendLogged(c, "SITE FILETYPE=SEQ");
+      await this.sendLogged(c, `RNFR ${quoteDsn(from)}`);
+      await this.sendLogged(c, `RNTO ${quoteDsn(to)}`);
+    });
+  }
+
+  /** Apaga um data set ou membro. */
+  async remove(dsn: string): Promise<void> {
+    await this.run(`apagar ${dsn}`, async (c) => {
+      await this.sendLogged(c, "SITE FILETYPE=SEQ");
+      await this.sendLogged(c, `DELE ${quoteDsn(dsn)}`);
+    });
+  }
+
+  private async cdHome(c: Client): Promise<void> {
+    await c.cd(`'${this.userId}.'`).catch(() => undefined);
   }
 
   /** Submete JCL ao JES. Devolve o JOBID. */
@@ -391,17 +487,34 @@ export class FtpSession implements vscode.Disposable {
 
   private updateStatus(): void {
     const cfg = getConfig();
-    if (this.isConnected) {
-      this.statusItem.text = `$(plug) MF: ${this.userId}@${cfg.host}`;
-      this.statusItem.tooltip = "Ligado ao mainframe (clique para desligar)";
+    const connected = this.isConnected;
+    vscode.commands.executeCommand("setContext", "mainframeFtps.connected", connected);
+    const tip = new vscode.MarkdownString(undefined, true);
+    if (connected) {
+      this.statusItem.text = `$(pass-filled) MF ${this.userId}`;
+      this.statusItem.color = new vscode.ThemeColor("mainframeFtps.connectedForeground");
+      tip.appendMarkdown(`**$(pass-filled) Autenticado** como \`${this.userId}\` em \`${cfg.host}:${cfg.port}\`\n\n`);
+      tip.appendMarkdown(`Ligado desde ${hhmm(this.connectedSince)} · último keepalive ${hhmmss(this.lastKeepAlive)}\n\n`);
+      tip.appendMarkdown("Clique para desligar");
       this.statusItem.command = "mainframeFtps.disconnect";
-      this.statusItem.backgroundColor = undefined;
+    } else if (this.connecting) {
+      this.statusItem.text = "$(sync~spin) MF a ligar…";
+      this.statusItem.color = undefined;
+      tip.appendMarkdown("A autenticar no mainframe…");
+      this.statusItem.command = undefined;
     } else {
-      this.statusItem.text = "$(debug-disconnect) MF: desligado";
-      this.statusItem.tooltip = "Clique para ligar ao mainframe";
+      this.statusItem.text = "$(circle-large-outline) MF";
+      this.statusItem.color = new vscode.ThemeColor("mainframeFtps.disconnectedForeground");
+      tip.appendMarkdown("**$(circle-large-outline) Não autenticado**\n\nClique para ligar (pede PIN + token)");
       this.statusItem.command = "mainframeFtps.connect";
-      this.statusItem.backgroundColor = new vscode.ThemeColor("statusBarItem.warningBackground");
     }
+    this.statusItem.backgroundColor = undefined;
+    this.statusItem.tooltip = tip;
+  }
+
+  /** Texto curto do estado, para as vistas. */
+  get stateLabel(): string {
+    return this.isConnected ? `● ${this.userId}@${getConfig().host}` : "○ desligado";
   }
 
   dispose(): void {
@@ -419,6 +532,17 @@ export class CancelledError extends Error {
   constructor() {
     super("Cancelado");
   }
+}
+
+export interface AllocOptions {
+  dsorg: "PO" | "PS";
+  pdse: boolean;
+  recfm: string;
+  lrecl: number;
+  unit: "TRACKS" | "CYLINDERS";
+  primary: number;
+  secondary: number;
+  directory: number;
 }
 
 class BufferSink extends Writable {
@@ -477,6 +601,14 @@ function firstLine(s: string): string {
 
 function oneLine(s: string): string {
   return s.replace(/\s*\r?\n\s*/g, " | ");
+}
+
+function hhmm(t: number): string {
+  return new Date(t).toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" });
+}
+
+function hhmmss(t: number): string {
+  return new Date(t).toLocaleTimeString("pt-PT");
 }
 
 function ts(): string {
