@@ -2,8 +2,8 @@
   "name": "mainframe-ftps",
   "displayName": "Mainframe FTPS (z/OS)",
   "description": "Grava automaticamente JCL/Easytrieve num PDS do z/OS ao guardar, submete jobs e mostra o estado e o spool, numa única sessão FTPS com keepalive e login por PIN + token.",
-  "version": "0.2.0",
-  "publisher": "jmgvieira",
+  "version": "0.2.1",
+  "publisher": "JorgeMiguel",
   "license": "MIT",
   "icon": "icon.png",
   "repository": {

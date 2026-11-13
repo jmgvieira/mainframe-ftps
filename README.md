@@ -5,7 +5,8 @@ Depois submetes o job e acompanhas o estado, sem sair do editor.
 
 ## Instalar
 
-1. No VS Code: **Extensions** → `…` → **Install from VSIX…** → escolher `mainframe-ftps-0.1.0.vsix`.
+1. No VS Code, em **Extensions**, procurar **Mainframe FTPS** (publisher JorgeMiguel) e instalar.
+   Em alternativa, descarregar o `.vsix` em https://github.com/jmgvieira/mainframe-ftps/releases e usar **Install from VSIX…**.
 2. **File → Preferences → Settings** → procurar `mainframeFtps` e preencher pelo menos:
    - `Host`: endereço do servidor FTP do z/OS
    - `Port`: `990` (já é o valor por omissão)
