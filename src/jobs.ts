@@ -1,6 +1,20 @@
 import * as vscode from "vscode";
 import { FtpSession, errText, CancelledError } from "./session";
 import { getConfig } from "./config";
+import { parseSpoolFiles, SpoolFile } from "./spool";
+
+/** DD de um job na vista Jobs. */
+export interface JobDd {
+  kind: "dd";
+  job: JobInfo;
+  file: SpoolFile;
+}
+
+export type JobNode = JobInfo | JobDd;
+
+function isDd(n: JobNode): n is JobDd {
+  return (n as JobDd).kind === "dd";
+}
 
 export interface JobInfo {
   jobId: string;
@@ -63,8 +77,8 @@ export function severity(job: Partial<JobInfo>): "ok" | "warn" | "error" | "runn
   return "ok";
 }
 
-export class JobsProvider implements vscode.TreeDataProvider<JobInfo>, vscode.Disposable {
-  private readonly _onDidChange = new vscode.EventEmitter<JobInfo | undefined>();
+export class JobsProvider implements vscode.TreeDataProvider<JobNode>, vscode.Disposable {
+  private readonly _onDidChange = new vscode.EventEmitter<JobNode | undefined>();
   readonly onDidChangeTreeData = this._onDidChange.event;
   private jobs: JobInfo[];
   private pollers = new Map<string, NodeJS.Timeout>();
@@ -77,7 +91,17 @@ export class JobsProvider implements vscode.TreeDataProvider<JobInfo>, vscode.Di
     this.jobs = context.workspaceState.get<JobInfo[]>(STATE_KEY, []);
   }
 
-  getTreeItem(job: JobInfo): vscode.TreeItem {
+  getTreeItem(node: JobNode): vscode.TreeItem {
+    if (isDd(node)) {
+      const f = node.file;
+      const dd = new vscode.TreeItem(f.ddName);
+      dd.description = [f.step, f.procStep].filter(Boolean).join(" ") + (f.bytes ? ` · ${fmtBytes(f.bytes)}` : "");
+      dd.iconPath = new vscode.ThemeIcon("file-text");
+      dd.contextValue = "mfJobDd";
+      dd.command = { command: "mainframeFtps.openSpool", title: "Ver DD", arguments: [node.job, f.id] };
+      return dd;
+    }
+    const job = node;
     const item = new vscode.TreeItem(`${job.jobName || "?"}  ${job.jobId}`);
     item.description = [job.status, job.result].filter(Boolean).join(" · ");
     item.tooltip = `${job.jobId} ${job.jobName}\nEstado: ${job.status} ${job.result}\nSubmetido: ${new Date(
@@ -93,16 +117,33 @@ export class JobsProvider implements vscode.TreeDataProvider<JobInfo>, vscode.Di
         ? new vscode.ThemeIcon("warning", new vscode.ThemeColor("list.warningForeground"))
         : new vscode.ThemeIcon("error", new vscode.ThemeColor("testing.iconFailed"));
     item.contextValue = "mfJob";
+    // terminado: a seta mostra os DD (SYSOUT, JESMSGLG, ...); o clique abre o spool todo
+    item.collapsibleState =
+      job.status === "OUTPUT" ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None;
     item.command = { command: "mainframeFtps.openSpool", title: "Ver spool", arguments: [job] };
     return item;
   }
 
-  getParent(): undefined {
-    return undefined;
+  getParent(node: JobNode): JobInfo | undefined {
+    return isDd(node) ? node.job : undefined;
   }
 
-  getChildren(): JobInfo[] {
-    return this.jobs;
+  async getChildren(node?: JobNode): Promise<JobNode[]> {
+    if (!node) {
+      return this.jobs;
+    }
+    if (isDd(node)) {
+      return [];
+    }
+    try {
+      const raw = await this.session.jesList(node.jobId);
+      return parseSpoolFiles(raw).map((file) => ({ kind: "dd" as const, job: node, file }));
+    } catch (err) {
+      if (!(err instanceof CancelledError)) {
+        this.log.appendLine(`Erro a listar os DD de ${node.jobId}: ${errText(err)}`);
+      }
+      return [];
+    }
   }
 
   all(): JobInfo[] {
@@ -216,4 +257,8 @@ export class JobsProvider implements vscode.TreeDataProvider<JobInfo>, vscode.Di
     }
     this._onDidChange.dispose();
   }
+}
+
+function fmtBytes(n: number): string {
+  return n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(1)} MB`;
 }

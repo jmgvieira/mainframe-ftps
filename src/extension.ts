@@ -7,12 +7,14 @@ import { getConfig } from "./config";
 import { DatasetsProvider } from "./datasets";
 import { registerBrowse } from "./browse";
 import { encode, decode, unsupported } from "./codec";
+import { parseSpoolFiles, splitSpool, sections, formatSpool, documentSections } from "./spool";
 
 let session: FtpSession;
 let targets: TargetMap;
 let jobs: JobsProvider;
 let log: vscode.OutputChannel;
 let datasets: DatasetsProvider;
+const spoolChanged = new vscode.EventEmitter<vscode.Uri>();
 
 const SPOOL_SCHEME = "mfspool";
 
@@ -34,17 +36,52 @@ export function activate(context: vscode.ExtensionContext) {
     log.appendLine(`Job ${jobName} ${jobId} submetido a partir de ${source}`);
   };
 
-  // Spool como documento só de leitura: mfspool:/JOB12345/NOME.log
+  // Spool como documento só de leitura: mfspool:/JOB12345/NOME.spool (um separador por job)
   const spoolProvider: vscode.TextDocumentContentProvider = {
+    onDidChange: spoolChanged.event,
     async provideTextDocumentContent(uri) {
       const jobId = uri.path.split("/")[1];
+      const jobName = path.basename(uri.path, ".spool");
       try {
-        const buf = await session.spool(jobId);
-        return decode(buf, getConfig().transferEncoding);
+        const { list, data } = await session.spoolWithList(jobId);
+        const cfg = getConfig();
+        const text = decode(data, cfg.transferEncoding).replace(/\r\n/g, "\n");
+        const info = parseJobLine(list, jobId);
+        const owner = list.split(/\r?\n/).map((l) => l.trim().split(/\s+/)).find((t) => t[1] === jobId)?.[2];
+        return formatSpool(
+          { jobName: info?.jobName ?? jobName, jobId, owner, status: info?.status, result: info?.result, readAt: new Date() },
+          sections(parseSpoolFiles(list), splitSpool(text)),
+          cfg.spoolStripAsa
+        );
       } catch (err) {
         return `Não foi possível obter o spool de ${jobId}:\n${errText(err)}\n\n` +
           "O job pode já ter sido apagado do JES (purge). Use \"Atualizar estado\" na vista Jobs para confirmar.";
       }
+    },
+  };
+
+  // Outline / breadcrumb e dobrar por DD
+  const spoolSelector: vscode.DocumentSelector = { language: "mfspool" };
+  const symbolProvider: vscode.DocumentSymbolProvider = {
+    provideDocumentSymbols(doc) {
+      const lines = doc.getText().split("\n");
+      return documentSections(lines).map((s) => {
+        const range = new vscode.Range(s.start, 0, s.end, lines[s.end]?.length ?? 0);
+        return new vscode.DocumentSymbol(
+          s.name,
+          s.detail,
+          s.id === "000" ? vscode.SymbolKind.Namespace : vscode.SymbolKind.File,
+          range,
+          new vscode.Range(s.start, 0, s.start, lines[s.start].length)
+        );
+      });
+    },
+  };
+  const foldingProvider: vscode.FoldingRangeProvider = {
+    provideFoldingRanges(doc) {
+      return documentSections(doc.getText().split("\n"))
+        .filter((s) => s.end > s.start)
+        .map((s) => new vscode.FoldingRange(s.start, s.end, vscode.FoldingRangeKind.Region));
     },
   };
 
@@ -54,6 +91,9 @@ export function activate(context: vscode.ExtensionContext) {
     jobs,
     tree,
     vscode.workspace.registerTextDocumentContentProvider(SPOOL_SCHEME, spoolProvider),
+    vscode.languages.registerDocumentSymbolProvider(spoolSelector, symbolProvider, { label: "Spool" }),
+    vscode.languages.registerFoldingRangeProvider(spoolSelector, foldingProvider),
+    spoolChanged,
     session.onDidChangeState((up) => up && jobs.refreshAll()),
 
     vscode.workspace.onDidSaveTextDocument((doc) => onSave(doc)),
@@ -109,10 +149,10 @@ export function activate(context: vscode.ExtensionContext) {
         await openSpool(job);
       }
     }),
-    cmd("mainframeFtps.openSpool", async (job?: JobInfo) => {
+    cmd("mainframeFtps.openSpool", async (job?: JobInfo, ddId?: string) => {
       job = job ?? (await pickJob());
       if (job) {
-        await openSpool(job);
+        await openSpool(job, ddId);
       }
     }),
     cmd("mainframeFtps.refreshJobs", async () => {
@@ -356,14 +396,53 @@ async function openMember(_context: vscode.ExtensionContext): Promise<void> {
 
 // ------------------------------------------------------------------ jobs
 
-async function openSpool(job: JobInfo): Promise<void> {
+/**
+ * Abre o spool num separador por job. Se já estiver aberto, volta a ler do JES
+ * no mesmo separador. Com ddId, posiciona no início desse DD.
+ */
+async function openSpool(job: JobInfo, ddId?: string): Promise<void> {
   const uri = vscode.Uri.from({
     scheme: SPOOL_SCHEME,
-    path: `/${job.jobId}/${job.jobName || job.jobId}.log`,
-    query: String(Date.now()), // força nova leitura
+    path: `/${job.jobId}/${job.jobName || job.jobId}.spool`,
   });
-  const doc = await vscode.workspace.openTextDocument(uri);
-  await vscode.window.showTextDocument(doc, { preview: false });
+  const existing = vscode.workspace.textDocuments.find((d) => d.uri.toString() === uri.toString());
+  let doc: vscode.TextDocument;
+  if (existing && !ddId) {
+    // atualizar: espera pelo novo conteúdo
+    const updated = new Promise<void>((resolve) => {
+      const sub = vscode.workspace.onDidChangeTextDocument((e) => {
+        if (e.document.uri.toString() === uri.toString()) {
+          sub.dispose();
+          resolve();
+        }
+      });
+      setTimeout(() => {
+        sub.dispose();
+        resolve();
+      }, 15000);
+    });
+    spoolChanged.fire(uri);
+    await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Window, title: `A ler o spool de ${job.jobId}…` },
+      () => updated
+    );
+    doc = existing;
+  } else {
+    doc = existing ?? (await vscode.workspace.openTextDocument(uri));
+  }
+  if (doc.languageId !== "mfspool") {
+    doc = await vscode.languages.setTextDocumentLanguage(doc, "mfspool");
+  }
+  const editor = await vscode.window.showTextDocument(doc, { preview: false });
+  if (ddId) {
+    const lines = doc.getText().split("\n");
+    const sec = documentSections(lines).find((s) => s.id === ddId);
+    if (sec) {
+      const pos = new vscode.Position(sec.start, 0);
+      editor.selection = new vscode.Selection(pos, pos);
+      editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.AtTop);
+    }
+  }
 }
 
 async function pickJob(): Promise<JobInfo | undefined> {

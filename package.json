@@ -636,6 +636,12 @@
           "default": {},
           "order": 22,
           "markdownDescription": "Extensão local por qualificador do data set, além das predefinidas (JCL/CNTL/PROC → .jcl, EZT/EASY → .ezt, COBOL → .cbl, COPY → .cpy). Ex.: `{ \"JOBLIB\": \".jcl\" }`."
+        },
+        "mainframeFtps.spoolStripAsa": {
+          "type": "boolean",
+          "default": true,
+          "order": 20,
+          "description": "No spool, retirar o carácter de controlo de impressão (ASA) da coluna 1 quando o ficheiro o tiver."
         }
       }
     },
@@ -668,6 +674,24 @@
           "highContrast": "#FFFFFF",
           "highContrastLight": "#000000"
         }
+      }
+    ],
+    "languages": [
+      {
+        "id": "mfspool",
+        "aliases": [
+          "Spool z/OS"
+        ],
+        "extensions": [
+          ".spool"
+        ]
+      }
+    ],
+    "grammars": [
+      {
+        "language": "mfspool",
+        "scopeName": "source.mfspool",
+        "path": "./syntaxes/mfspool.tmLanguage.json"
       }
     ]
   },

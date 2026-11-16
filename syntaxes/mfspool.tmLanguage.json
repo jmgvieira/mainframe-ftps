@@ -1,0 +1,68 @@
+{
+  "name": "Spool z/OS",
+  "scopeName": "source.mfspool",
+  "patterns": [
+    {
+      "name": "markup.heading.mfspool",
+      "match": "^=== .*$"
+    },
+    {
+      "name": "invalid.illegal.mfspool",
+      "match": "\\b(ABEND=?\\s*[SU][0-9A-F]{3,4}|ABENDED|JCL ERROR|NOT CATLGD|STEP WAS NOT EXECUTED|FLUSH \\(não executado\\))"
+    },
+    {
+      "name": "invalid.illegal.mfspool",
+      "match": "\\b[A-Z]{3}[0-9]{3,5}[ES]\\b"
+    },
+    {
+      "match": "\\b(COND CODE|RC=?)\\s*(000[1-4])\\b",
+      "captures": {
+        "2": {
+          "name": "markup.changed.mfspool"
+        }
+      }
+    },
+    {
+      "name": "invalid.illegal.mfspool",
+      "match": "\\b(?:COND CODE|RC=?)\\s*(?!000[0-4]\\b)\\d{4}\\b"
+    },
+    {
+      "match": "\\b(COND CODE|RC=?)\\s*(0000)\\b",
+      "captures": {
+        "2": {
+          "name": "markup.inserted.mfspool"
+        }
+      }
+    },
+    {
+      "name": "string.other.mfspool",
+      "match": "\\b[A-Z]{3}[0-9]{3,5}W\\b"
+    },
+    {
+      "name": "keyword.other.mfspool",
+      "match": "\\b(IEF|IEC|IGD|IKJ|IEA|ICH|IRR|HASP|\\$HASP)[0-9]{3,5}I\\b"
+    },
+    {
+      "name": "comment.line.mfspool",
+      "match": "//\\*.*$"
+    },
+    {
+      "match": "(//)([A-Z#@$][A-Z0-9#@$]{0,7})?\\s+(JOB|EXEC|DD|PROC|PEND|SET|INCLUDE|JCLLIB|IF|THEN|ELSE|ENDIF|OUTPUT)\\b",
+      "captures": {
+        "1": {
+          "name": "punctuation.definition.mfspool"
+        },
+        "2": {
+          "name": "entity.name.function.mfspool"
+        },
+        "3": {
+          "name": "keyword.control.mfspool"
+        }
+      }
+    },
+    {
+      "name": "comment.line.mfspool",
+      "match": "^\\s*(Lido em|STEP\\s+RC|DD\\s+STEP).*$"
+    }
+  ]
+}

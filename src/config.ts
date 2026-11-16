@@ -21,6 +21,7 @@ export interface MfConfig {
   recordLength: number;
   pollSeconds: number;
   pollMaxMinutes: number;
+  spoolStripAsa: boolean;
 }
 
 export function getConfig(): MfConfig {
@@ -45,5 +46,6 @@ export function getConfig(): MfConfig {
     recordLength: c.get("recordLength", 80),
     pollSeconds: c.get("jobPollSeconds", 5),
     pollMaxMinutes: c.get("jobPollMaxMinutes", 10),
+    spoolStripAsa: c.get("spoolStripAsa", true),
   };
 }

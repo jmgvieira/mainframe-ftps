@@ -493,6 +493,30 @@ export class FtpSession implements vscode.Disposable {
     });
   }
 
+  /** Lista de ficheiros de spool (LIST jobid) e o spool completo (RETR jobid.x), na mesma operação. */
+  async spoolWithList(jobId: string): Promise<{ list: string; data: Buffer }> {
+    return this.run(`spool ${jobId}`, async (c) => {
+      await c.send("TYPE A");
+      await this.sendLogged(c, "SITE FILETYPE=JES");
+      try {
+        await this.jesById(c);
+        let list = "";
+        try {
+          list = await rawList(c, `LIST ${jobId}`);
+        } catch (err) {
+          if (!(err instanceof FTPError && err.code === 550)) {
+            throw err;
+          }
+        }
+        const sink = new BufferSink();
+        await c.downloadTo(sink, `${jobId}.x`);
+        return { list, data: sink.buffer() };
+      } finally {
+        await c.send("SITE FILETYPE=SEQ").catch(() => undefined);
+      }
+    });
+  }
+
   async deleteJob(jobId: string): Promise<void> {
     await this.run(`apagar ${jobId}`, async (c) => {
       await this.sendLogged(c, "SITE FILETYPE=JES");
