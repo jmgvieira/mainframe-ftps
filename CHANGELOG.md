@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.1
+- Login num só campo: PIN fixo e token escritos seguidos, com um único Enter.
+- Vista Jobs mais simples: clicar num job abre o spool (usa a sessão já aberta); o único botão na linha é "Atualizar estado". "Ver spool" fica no menu do botão direito.
+- A mensagem de boas-vindas da vista Jobs só mostra "Ligar" quando não há sessão.
+- Mensagem de erro do spool mais clara.
+- Corrigido "550 Jobid not found" no estado e no spool de jobs cujo nome não começa pelo userid: o filtro `JESJOBNAME` passa a `*` quando se acede a um job pelo JOBID.
+
 ## 0.3.0
 - Nova vista **Mainframe** na barra de atividades, com filtros de data sets (como no ISPF 3.4), PDS e membros.
 - Abrir membros e sequenciais com um clique, já associados para gravação automática.

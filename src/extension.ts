@@ -43,7 +43,7 @@ export function activate(context: vscode.ExtensionContext) {
         return decode(buf, getConfig().transferEncoding);
       } catch (err) {
         return `Não foi possível obter o spool de ${jobId}:\n${errText(err)}\n\n` +
-          "Confirme que o servidor FTP tem JESINTERFACELEVEL=2 e que o job ainda existe.";
+          "O job pode já ter sido apagado do JES (purge). Use \"Atualizar estado\" na vista Jobs para confirmar.";
       }
     },
   };

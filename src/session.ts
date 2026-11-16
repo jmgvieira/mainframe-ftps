@@ -74,19 +74,7 @@ export class FtpSession implements vscode.Disposable {
     }
 
     const user = await this.askUser(cfg.user);
-    const pin = await this.askPin();
-    const token = await vscode.window.showInputBox({
-      title: `Mainframe FTPS – ${user}@${cfg.host}`,
-      prompt: "Token atual (4 dígitos do PIN USB)",
-      password: true,
-      ignoreFocusOut: true,
-      validateInput: (v) => (/^\d{4,8}$/.test(v) ? undefined : "Indique os dígitos do token"),
-    });
-    if (!token) {
-      throw new CancelledError();
-    }
-    const password = cfg.passcodeOrder === "tokenThenPin" ? token + pin : pin + token;
-
+    const password = await this.askPassword(user, cfg.host);
     this.closeClient();
     const client = new Client(cfg.timeoutSeconds * 1000);
     client.ftp.verbose = false;
@@ -155,27 +143,47 @@ export class FtpSession implements vscode.Disposable {
     return user;
   }
 
-  private async askPin(): Promise<string> {
+  /**
+   * Pede a password num único campo. Por omissão o utilizador escreve o PIN fixo
+   * e o token seguidos (ex.: ABCD1234) e carrega Enter uma vez, como no TSO.
+   * Com "rememberPin" ativo e o PIN já guardado, basta escrever o token.
+   */
+  private async askPassword(user: string, host: string): Promise<string> {
     const cfg = getConfig();
-    if (cfg.rememberPin) {
-      const saved = await this.context.secrets.get(PIN_KEY);
-      if (saved) {
-        return saved;
+    const tokenFirst = cfg.passcodeOrder === "tokenThenPin";
+    const saved = cfg.rememberPin ? await this.context.secrets.get(PIN_KEY) : undefined;
+    if (saved) {
+      const token = await vscode.window.showInputBox({
+        title: `Mainframe FTPS – ${user}@${host}`,
+        prompt: "Token (PIN fixo já guardado)",
+        password: true,
+        ignoreFocusOut: true,
+        validateInput: (v) => (/^\d{4,8}$/.test(v) ? undefined : "Indique os dígitos do token"),
+      });
+      if (!token) {
+        throw new CancelledError();
       }
+      return tokenFirst ? token + saved : saved + token;
     }
-    const pin = await vscode.window.showInputBox({
-      title: "Mainframe FTPS",
-      prompt: "Password/PIN fixo",
+    const pwd = await vscode.window.showInputBox({
+      title: `Mainframe FTPS – ${user}@${host}`,
+      prompt: tokenFirst ? "Token + PIN fixo, seguidos" : "PIN fixo + token, seguidos",
       password: true,
       ignoreFocusOut: true,
+      validateInput: (v) => (v.length >= 5 ? undefined : "Escreva o PIN fixo e o token seguidos"),
     });
-    if (!pin) {
+    if (!pwd) {
       throw new CancelledError();
     }
     if (cfg.rememberPin) {
-      await this.context.secrets.store(PIN_KEY, pin);
+      // o token são os dígitos no fim (ou no início); o resto é o PIN fixo
+      const m = tokenFirst ? /^(\d{4})(.+)$/.exec(pwd) : /^(.+?)(\d{4})$/.exec(pwd);
+      const pin = m ? (tokenFirst ? m[2] : m[1]) : "";
+      if (pin) {
+        await this.context.secrets.store(PIN_KEY, pin);
+      }
     }
-    return pin;
+    return pwd;
   }
 
   async forgetPin(): Promise<void> {
@@ -435,12 +443,24 @@ export class FtpSession implements vscode.Disposable {
     });
   }
 
+  /**
+   * Acesso a um job pelo JOBID. O z/OS aplica o filtro JESJOBNAME (por omissão
+   * <userid>*) mesmo em LIST/RETR/DELE de um JOBID, por isso jobs com outro nome
+   * (ex.: IXXXXXTT) davam "550 Jobid not found". O dono continua a ser o utilizador.
+   */
+  private async jesById(c: Client): Promise<void> {
+    await this.sendLogged(c, "SITE JESJOBNAME=*");
+    await this.sendLogged(c, `SITE JESOWNER=${this.userId}`);
+  }
+
   /** Listagem JES em bruto (LIST <jobid> ou LIST de todos os jobs com filtro). */
   async jesList(jobIdOrEmpty: string, jobNameFilter = "*", owner = ""): Promise<string> {
     return this.run("estado do job", async (c) => {
       await this.sendLogged(c, "SITE FILETYPE=JES");
       try {
-        if (!jobIdOrEmpty) {
+        if (jobIdOrEmpty) {
+          await this.jesById(c);
+        } else {
           await this.sendLogged(c, `SITE JESJOBNAME=${jobNameFilter}`);
           await this.sendLogged(c, `SITE JESOWNER=${owner || this.userId}`);
         }
@@ -463,6 +483,7 @@ export class FtpSession implements vscode.Disposable {
       await c.send("TYPE A");
       await this.sendLogged(c, "SITE FILETYPE=JES");
       try {
+        await this.jesById(c);
         const sink = new BufferSink();
         await c.downloadTo(sink, `${jobId}.x`);
         return sink.buffer();
@@ -476,6 +497,7 @@ export class FtpSession implements vscode.Disposable {
     await this.run(`apagar ${jobId}`, async (c) => {
       await this.sendLogged(c, "SITE FILETYPE=JES");
       try {
+        await this.jesById(c);
         await this.sendLogged(c, `DELE ${jobId}`);
       } finally {
         await c.send("SITE FILETYPE=SEQ").catch(() => undefined);

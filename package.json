@@ -2,7 +2,7 @@
   "name": "mainframe-ftps",
   "displayName": "Mainframe FTPS (z/OS)",
   "description": "Navega nos data sets do z/OS, edita membros com gravação automática no PDS, submete jobs e mostra o spool, numa única sessão FTPS com keepalive e login por PIN + token.",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "publisher": "JorgeMiguel",
   "license": "MIT",
   "icon": "icon.png",
@@ -70,13 +70,13 @@
       },
       {
         "command": "mainframeFtps.jobStatus",
-        "title": "Ver estado de um job",
+        "title": "Atualizar estado do job",
         "category": "Mainframe",
-        "icon": "$(info)"
+        "icon": "$(refresh)"
       },
       {
         "command": "mainframeFtps.openSpool",
-        "title": "Ver spool do job",
+        "title": "Ver spool",
         "category": "Mainframe",
         "icon": "$(output)"
       },
@@ -218,7 +218,13 @@
       },
       {
         "view": "mainframeFtps.jobs",
-        "contents": "Ainda não submeteu jobs nesta pasta.\n[Ligar ao mainframe](command:mainframeFtps.connect)\n[Listar jobs no JES](command:mainframeFtps.listJobs)\n[Abrir membro do mainframe](command:mainframeFtps.openMember)"
+        "when": "!mainframeFtps.connected",
+        "contents": "Ainda não submeteu jobs nesta pasta.\n[$(plug) Ligar (PIN + token)](command:mainframeFtps.connect)"
+      },
+      {
+        "view": "mainframeFtps.jobs",
+        "when": "mainframeFtps.connected",
+        "contents": "Ainda não submeteu jobs nesta pasta. Clique num job para ver o spool.\n[$(list-unordered) Listar os meus jobs no JES](command:mainframeFtps.listJobs)"
       }
     ],
     "menus": {
@@ -266,14 +272,14 @@
       ],
       "view/item/context": [
         {
-          "command": "mainframeFtps.openSpool",
+          "command": "mainframeFtps.jobStatus",
           "when": "viewItem == mfJob",
           "group": "inline@1"
         },
         {
-          "command": "mainframeFtps.jobStatus",
+          "command": "mainframeFtps.openSpool",
           "when": "viewItem == mfJob",
-          "group": "inline@2"
+          "group": "a@1"
         },
         {
           "command": "mainframeFtps.removeJob",
@@ -509,7 +515,7 @@
             "Password = PIN fixo + token",
             "Password = token + PIN fixo"
           ],
-          "description": "Como compor a password a partir do PIN fixo e do token."
+          "description": "Ordem em que o PIN fixo e o token são escritos (seguidos, num só campo)."
         },
         "mainframeFtps.rememberPin": {
           "type": "boolean",
