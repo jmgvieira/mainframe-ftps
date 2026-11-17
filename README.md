@@ -115,3 +115,6 @@ A password nunca aparece no log.
 npm install
 npm run package
 ```
+
+Para quem vai desenvolver a extensão: ver o [Guia do developer](docs/GUIA-DO-DEVELOPER.md)
+(estrutura do código, compilação, depuração e publicação).
