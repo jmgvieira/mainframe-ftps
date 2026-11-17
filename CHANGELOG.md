@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.3.2
+- Sem alterações de funcionalidade: o pacote deixa de incluir um identificador interno que aparecia num comentário do código.
+
 ## 0.3.1
 - Login num só campo: PIN fixo e token escritos seguidos, com um único Enter.
 - Spool ao estilo do SDSF:
