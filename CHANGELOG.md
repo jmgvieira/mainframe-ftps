@@ -1,52 +1,62 @@
 # Changelog
 
+## 0.4.0
+- Several servers: list them in the new `mainframeFtps.hosts` setting, separated by `;` (`PROD=mvs1.company.com;TEST=mvs2.company.com:991`). Name and port are optional.
+- Switch server by clicking the **MF** indicator in the status bar or the server button in the **Mainframe** view (also **Mainframe: Escolher servidor**). The current session is closed and the new one asks for PIN + token.
+- The status bar and the Data sets view show the server name.
+- Each file remembers the server it came from. Saving or submitting it while connected to another server asks first: use the current server or switch to the original one.
+- The Jobs view shows only the jobs of the current server; clearing the list keeps the jobs of the other servers.
+- The old `mainframeFtps.host` setting still works and appears as the first server of the list.
+- The submit button (🚀) also appears for JCL members opened from the Mainframe view, which no longer have a `.jcl` extension.
+- README, CHANGELOG and settings descriptions in English.
+
 ## 0.3.5
-- A gravação no mainframe deixa de ignorar ficheiros abertos fora do disco local (por exemplo, pastas abertas por WSL, SSH ou outro modo remoto).
-- O log mostra a versão da extensão ao arrancar, cada ficheiro guardado e qualquer erro durante a gravação, que passa também a aparecer numa mensagem.
+- Saving to the mainframe no longer ignores files opened outside the local disk (for example, folders opened through WSL, SSH or another remote mode).
+- The log shows the extension version at start-up, every saved file and any error while saving, which is also shown in a message.
 
 ## 0.3.4
-- Os ficheiros locais têm o mesmo nome que no mainframe, sem `.txt` nem outra extensão: `mainframe/<PDS>/<MEMBRO>` e `mainframe/<DSN>`. A linguagem (JCL, Easytrieve, COBOL) é escolhida pelos qualificadores; quando o nome não a indica, usa `defaultExtension` (por omissão `.jcl`).
-- Os ficheiros descarregados com extensão pelas versões anteriores continuam a ser gravados no data set certo.
+- Local files have the same name as on the mainframe, without `.txt` or any other extension: `mainframe/<PDS>/<MEMBER>` and `mainframe/<DSN>`. The language (JCL, Easytrieve, COBOL) is chosen from the qualifiers; when the name does not indicate it, `defaultExtension` is used (`.jcl` by default).
+- Files downloaded with an extension by earlier versions are still saved to the right data set.
 
 ## 0.3.3
-- Corrigido: um data set aberto a partir da vista Mainframe podia não ser gravado no mainframe ao guardar (sobretudo com a extensão `.txt`), sem qualquer aviso. Os ficheiros na pasta local (`mainframe/<PDS>/<MEMBRO>.<ext>` ou `mainframe/<DSN>.<ext>`) passam a ser sempre reconhecidos pelo caminho.
-- No Windows, a associação ficheiro → data set deixa de depender de maiúsculas/minúsculas no caminho.
-- `localFolder` aceita um caminho relativo à pasta do workspace.
-- O log (Mainframe: Mostrar log) regista cada abertura e gravação, e o motivo quando um ficheiro guardado não é enviado.
+- Fixed: a data set opened from the Mainframe view could fail to be saved to the mainframe, without any warning (mostly with the `.txt` extension). Files in the local folder (`mainframe/<PDS>/<MEMBER>.<ext>` or `mainframe/<DSN>.<ext>`) are now always recognised by their path.
+- On Windows, the file → data set association no longer depends on upper/lower case in the path.
+- `localFolder` accepts a path relative to the workspace folder.
+- The log (Mainframe: Mostrar log) records every file opened and saved, and the reason when a saved file is not sent.
 
 ## 0.3.2
-- Sem alterações de funcionalidade: o pacote deixa de incluir um identificador interno que aparecia num comentário do código.
+- No functional changes: the package no longer includes an internal identifier that appeared in a code comment.
 
 ## 0.3.1
-- Login num só campo: PIN fixo e token escritos seguidos, com um único Enter.
-- Spool ao estilo do SDSF:
-  - um separador por job; clicar outra vez volta a ler do JES no mesmo separador;
-  - resumo no topo com o RC (ou ABEND / FLUSH) de cada step e a lista de DD;
-  - cada DD com cabeçalho próprio, no Outline e no breadcrumb, e pode ser dobrado;
-  - cores para RC, ABEND, erros de JCL, mensagens IEF/IEC e instruções JCL;
-  - remove o carácter de controlo de impressão (ASA) da coluna 1 (`spoolStripAsa`).
-- Vista Jobs mais simples: clicar num job abre o spool (usa a sessão já aberta); a seta dos jobs terminados mostra os DD, e clicar num DD abre o spool nesse ponto. O único botão na linha é "Atualizar estado".
-- A mensagem de boas-vindas da vista Jobs só mostra "Ligar" quando não há sessão.
-- Mensagem de erro do spool mais clara.
-- Corrigido "550 Jobid not found" no estado e no spool de jobs cujo nome não começa pelo userid: o filtro `JESJOBNAME` passa a `*` quando se acede a um job pelo JOBID.
+- Login in a single field: fixed PIN and token typed together, with a single Enter.
+- SDSF-style spool:
+  - one tab per job; clicking again reloads from JES in the same tab;
+  - summary at the top with the RC (or ABEND / FLUSH) of each step and the list of DDs;
+  - each DD with its own header, in the Outline and the breadcrumb, and foldable;
+  - colours for RC, ABEND, JCL errors, IEF/IEC messages and JCL statements;
+  - removes the print control character (ASA) from column 1 (`spoolStripAsa`).
+- Simpler Jobs view: clicking a job opens the spool (using the open session); the arrow of finished jobs shows the DDs, and clicking a DD opens the spool at that point. The only button on the line is "Atualizar estado" (refresh status).
+- The Jobs view welcome message only shows "Ligar" (connect) when there is no session.
+- Clearer spool error message.
+- Fixed "550 Jobid not found" in the status and spool of jobs whose name does not start with the user ID: the `JESJOBNAME` filter becomes `*` when a job is accessed by JOBID.
 
 ## 0.3.0
-- Nova vista **Mainframe** na barra de atividades, com filtros de data sets (como no ISPF 3.4), PDS e membros.
-- Abrir membros e sequenciais com um clique, já associados para gravação automática.
-- Criar membros e data sets (PDSE, PDS, PS; também "igual a este"), renomear, apagar, submeter e copiar o nome.
-- Indicador de autenticação na barra de estado (verde = ligado, cinzento = desligado), com o último keepalive.
-- Deteção de ligação fechada pelo servidor.
+- New **Mainframe** view in the activity bar, with data set filters (as in ISPF 3.4), PDS and members.
+- Open members and sequential data sets with one click, already associated for automatic saving.
+- Create members and data sets (PDSE, PDS, PS; also "like this one"), rename, delete, submit and copy the name.
+- Authentication indicator in the status bar (green = connected, grey = disconnected), with the last keepalive.
+- Detection of connections closed by the server.
 
 ## 0.2.1
-- Publicação no VS Code Marketplace (publisher JorgeMiguel).
+- Published on the VS Code Marketplace (publisher JorgeMiguel).
 
 ## 0.2.0
-- Código de página do mainframe configurável (`hostCodePage`, por omissão IBM-1147 – França com €).
-- Transferência em ISO-8859-15 (Latin-9) com suporte a €.
-- Aviso de caracteres sem equivalente no código de página.
+- Configurable mainframe code page (`hostCodePage`, IBM-1147 – France with € by default).
+- Transfer in ISO-8859-15 (Latin-9) with € support.
+- Warning about characters without an equivalent in the code page.
 
 ## 0.1.0
-- Sessão FTPS única e persistente, com keepalive (NOOP) e login por PIN + token.
-- Gravação automática no PDS ao guardar; destino definido na primeira gravação.
-- Submissão de JCL, acompanhamento do estado e visualização do spool.
-- Abrir membros de um PDS.
+- Single persistent FTPS session, with keepalive (NOOP) and PIN + token login.
+- Automatic save to the PDS; destination chosen on the first save.
+- JCL submission, status tracking and spool viewing.
+- Open members of a PDS.

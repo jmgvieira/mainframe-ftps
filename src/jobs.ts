@@ -23,6 +23,8 @@ export interface JobInfo {
   result: string; // RC=0000, ABEND=S0C7, (JCL error) ...
   submitted: number;
   source?: string;
+  /** Servidor onde foi submetido (jobs antigos não têm e aparecem em todos). */
+  server?: string;
 }
 
 const STATE_KEY = "mainframeFtps.jobs";
@@ -130,7 +132,7 @@ export class JobsProvider implements vscode.TreeDataProvider<JobNode>, vscode.Di
 
   async getChildren(node?: JobNode): Promise<JobNode[]> {
     if (!node) {
-      return this.jobs;
+      return this.visible();
     }
     if (isDd(node)) {
       return [];
@@ -147,12 +149,19 @@ export class JobsProvider implements vscode.TreeDataProvider<JobNode>, vscode.Di
   }
 
   all(): JobInfo[] {
-    return this.jobs;
+    return this.visible();
+  }
+
+  /** Jobs do servidor em uso. */
+  private visible(): JobInfo[] {
+    const server = this.session.server;
+    return this.jobs.filter((j) => !j.server || !server || j.server === server);
   }
 
   async add(jobId: string, jobName: string, source?: string): Promise<JobInfo> {
-    const job: JobInfo = { jobId, jobName, status: "INPUT", result: "", submitted: Date.now(), source };
-    this.jobs = [job, ...this.jobs.filter((j) => j.jobId !== jobId)].slice(0, MAX_JOBS);
+    const server = this.session.server || undefined;
+    const job: JobInfo = { jobId, jobName, status: "INPUT", result: "", submitted: Date.now(), source, server };
+    this.jobs = [job, ...this.jobs.filter((j) => !(j.jobId === jobId && j.server === server))].slice(0, MAX_JOBS);
     await this.save();
     this.startPolling(job);
     return job;
@@ -160,20 +169,25 @@ export class JobsProvider implements vscode.TreeDataProvider<JobNode>, vscode.Di
 
   async remove(job: JobInfo): Promise<void> {
     this.stopPolling(job.jobId);
-    this.jobs = this.jobs.filter((j) => j.jobId !== job.jobId);
+    this.jobs = this.jobs.filter((j) => j !== job && !(j.jobId === job.jobId && j.server === job.server));
     await this.save();
   }
 
+  /** Limpa a lista do servidor em uso (os jobs dos outros servidores ficam). */
   async clear(): Promise<void> {
-    for (const id of this.pollers.keys()) {
-      this.stopPolling(id);
+    const gone = new Set(this.visible());
+    for (const j of gone) {
+      this.stopPolling(j.jobId);
     }
-    this.jobs = [];
+    this.jobs = this.jobs.filter((j) => !gone.has(j));
     await this.save();
   }
 
   /** Atualiza o estado de um job a partir do JES. */
   async refresh(job: JobInfo): Promise<JobInfo> {
+    if (job.server && this.session.server && job.server !== this.session.server) {
+      return job; // job de outro servidor: o JES deste não o conhece
+    }
     const raw = await this.session.jesList(job.jobId);
     const parsed = parseJobLine(raw, job.jobId);
     if (parsed) {
@@ -191,7 +205,7 @@ export class JobsProvider implements vscode.TreeDataProvider<JobNode>, vscode.Di
       this._onDidChange.fire(undefined);
       return;
     }
-    for (const job of this.jobs.filter((j) => j.status !== "OUTPUT")) {
+    for (const job of this.visible().filter((j) => j.status !== "OUTPUT")) {
       await this.refresh(job).catch(() => undefined);
     }
     this._onDidChange.fire(undefined);

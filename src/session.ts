@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import { Client, FTPError } from "basic-ftp";
 import { Readable, Writable } from "stream";
-import { getConfig } from "./config";
+import { getConfig, activeServer, servers, setActiveServer } from "./config";
 import { zosName } from "./codec";
 
 /**
@@ -23,6 +23,8 @@ export class FtpSession implements vscode.Disposable {
   private readonly _onDidChangeState = new vscode.EventEmitter<boolean>();
   readonly onDidChangeState = this._onDidChangeState.event;
   private userId = "";
+  /** Nome do servidor da ligação aberta (da lista mainframeFtps.hosts). */
+  private serverName = "";
   private connectedSince = 0;
   private lastKeepAlive = 0;
 
@@ -33,6 +35,36 @@ export class FtpSession implements vscode.Disposable {
     this.statusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
     this.updateStatus();
     this.statusItem.show();
+    context.subscriptions.push(
+      vscode.workspace.onDidChangeConfiguration((e) => {
+        if (e.affectsConfiguration("mainframeFtps.hosts") || e.affectsConfiguration("mainframeFtps.host")) {
+          this.updateStatus();
+          this._onDidChangeState.fire(this.isConnected);
+        }
+      })
+    );
+  }
+
+  /** Servidor da ligação aberta ou, sem ligação, o que será usado na próxima. */
+  get server(): string {
+    return this.isConnected ? this.serverName : activeServer()?.name ?? "";
+  }
+
+  /** Muda de servidor: fecha a sessão atual (se houver) e liga ao novo, pedindo PIN + token. */
+  async switchServer(name: string): Promise<void> {
+    if (this.isConnected && this.serverName === name) {
+      return;
+    }
+    if (this.client) {
+      this.log.appendLine(`[${ts()}] A mudar de ${this.serverName} para ${name}.`);
+    }
+    // espera que acabe o que estiver na fila antes de fechar
+    await this.queue;
+    this.disconnect();
+    await setActiveServer(name);
+    this.updateStatus();
+    this._onDidChangeState.fire(false);
+    await this.ensureConnected();
   }
 
   get isConnected(): boolean {
@@ -64,17 +96,18 @@ export class FtpSession implements vscode.Disposable {
     const cfg = getConfig();
     if (!cfg.host) {
       const action = await vscode.window.showErrorMessage(
-        "Mainframe FTPS: falta configurar o host (mainframeFtps.host).",
+        "Mainframe FTPS: falta configurar os servidores (mainframeFtps.hosts).",
         "Abrir definições"
       );
       if (action) {
-        vscode.commands.executeCommand("workbench.action.openSettings", "mainframeFtps");
+        vscode.commands.executeCommand("workbench.action.openSettings", "mainframeFtps.hosts");
       }
       throw new CancelledError();
     }
+    const serverName = activeServer()?.name ?? cfg.host;
 
     const user = await this.askUser(cfg.user);
-    const password = await this.askPassword(user, cfg.host);
+    const password = await this.askPassword(user, serverName === cfg.host ? cfg.host : `${serverName} (${cfg.host})`);
     this.closeClient();
     const client = new Client(cfg.timeoutSeconds * 1000);
     client.ftp.verbose = false;
@@ -83,7 +116,7 @@ export class FtpSession implements vscode.Disposable {
 
     try {
       this.log.appendLine(
-        `[${ts()}] A ligar a ${cfg.host}:${cfg.port} (TLS ${cfg.tlsMode}) como ${user}`
+        `[${ts()}] A ligar a ${serverName} (${cfg.host}:${cfg.port}, TLS ${cfg.tlsMode}) como ${user}`
       );
       await client.access({
         host: cfg.host,
@@ -104,6 +137,7 @@ export class FtpSession implements vscode.Disposable {
       }
       this.client = client;
       this.userId = user.toUpperCase();
+      this.serverName = serverName;
       this.connectedSince = Date.now();
       this.lastKeepAlive = Date.now();
       this.lastActivity = Date.now();
@@ -534,25 +568,30 @@ export class FtpSession implements vscode.Disposable {
   private updateStatus(): void {
     const cfg = getConfig();
     const connected = this.isConnected;
+    const several = servers().length > 1;
+    const name = this.server;
+    const label = name ? ` ${name}` : "";
     vscode.commands.executeCommand("setContext", "mainframeFtps.connected", connected);
+    vscode.commands.executeCommand("setContext", "mainframeFtps.multipleServers", several);
     const tip = new vscode.MarkdownString(undefined, true);
     if (connected) {
-      this.statusItem.text = `$(pass-filled) MF ${this.userId}`;
+      this.statusItem.text = `$(pass-filled) MF${label}`;
       this.statusItem.color = new vscode.ThemeColor("mainframeFtps.connectedForeground");
-      tip.appendMarkdown(`**$(pass-filled) Autenticado** como \`${this.userId}\` em \`${cfg.host}:${cfg.port}\`\n\n`);
+      tip.appendMarkdown(`**$(pass-filled) Autenticado** como \`${this.userId}\` em **${name}** (\`${cfg.host}:${cfg.port}\`)\n\n`);
       tip.appendMarkdown(`Ligado desde ${hhmm(this.connectedSince)} · último keepalive ${hhmmss(this.lastKeepAlive)}\n\n`);
-      tip.appendMarkdown("Clique para desligar");
-      this.statusItem.command = "mainframeFtps.disconnect";
+      tip.appendMarkdown(several ? "Clique para mudar de servidor ou desligar" : "Clique para desligar");
+      this.statusItem.command = several ? "mainframeFtps.selectServer" : "mainframeFtps.disconnect";
     } else if (this.connecting) {
-      this.statusItem.text = "$(sync~spin) MF a ligar…";
+      this.statusItem.text = `$(sync~spin) MF${label} a ligar…`;
       this.statusItem.color = undefined;
-      tip.appendMarkdown("A autenticar no mainframe…");
+      tip.appendMarkdown(`A autenticar em ${name || "mainframe"}…`);
       this.statusItem.command = undefined;
     } else {
-      this.statusItem.text = "$(circle-large-outline) MF";
+      this.statusItem.text = `$(circle-large-outline) MF${label}`;
       this.statusItem.color = new vscode.ThemeColor("mainframeFtps.disconnectedForeground");
-      tip.appendMarkdown("**$(circle-large-outline) Não autenticado**\n\nClique para ligar (pede PIN + token)");
-      this.statusItem.command = "mainframeFtps.connect";
+      tip.appendMarkdown(`**$(circle-large-outline) Não autenticado**${name ? ` · próximo servidor: **${name}**` : ""}\n\n`);
+      tip.appendMarkdown(several ? "Clique para escolher o servidor e ligar (pede PIN + token)" : "Clique para ligar (pede PIN + token)");
+      this.statusItem.command = several ? "mainframeFtps.selectServer" : "mainframeFtps.connect";
     }
     this.statusItem.backgroundColor = undefined;
     this.statusItem.tooltip = tip;
@@ -560,7 +599,7 @@ export class FtpSession implements vscode.Disposable {
 
   /** Texto curto do estado, para as vistas. */
   get stateLabel(): string {
-    return this.isConnected ? `● ${this.userId}@${getConfig().host}` : "○ desligado";
+    return this.isConnected ? `● ${this.userId}@${this.serverName}` : `○ desligado${this.server ? ` · ${this.server}` : ""}`;
   }
 
   dispose(): void {

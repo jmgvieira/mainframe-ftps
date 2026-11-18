@@ -171,9 +171,21 @@ export function registerBrowse(d: Deps): vscode.Disposable[] {
   };
   vscode.workspace.textDocuments.forEach((doc) => void fixLanguage(doc));
 
+  // Botão "Submeter" no topo do editor também para membros JCL sem extensão
+  const updateJclContext = async (editor?: vscode.TextEditor) => {
+    let isJcl = false;
+    if (editor && editor.document.uri.scheme !== "untitled") {
+      const target = await targets.get(editor.document.uri);
+      isJcl = !!target && target !== IGNORE && extFor(target) === ".jcl";
+    }
+    await vscode.commands.executeCommand("setContext", "mainframeFtps.activeIsJcl", isJcl);
+  };
+  void updateJclContext(vscode.window.activeTextEditor);
+
   return [
     view,
     vscode.workspace.onDidOpenTextDocument((doc) => void fixLanguage(doc)),
+    vscode.window.onDidChangeActiveTextEditor((e) => void updateJclContext(e)),
     session.onDidChangeState(() => {
       updateDescription();
       datasets.refresh();

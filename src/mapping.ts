@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import * as path from "path";
+import { activeServer } from "./config";
 
 /** Destino de um ficheiro local no mainframe. "IGNORE" = nunca enviar. */
 export type Target = string;
@@ -15,6 +16,7 @@ const MAP_FILE = "mainframe-ftps.json";
 export class TargetMap {
   /** Associações desta sessão do VS Code (não depende de ler o .json). */
   private readonly cache = new Map<string, Target>();
+  private readonly serverCache = new Map<string, string>();
 
   constructor(private readonly context: vscode.ExtensionContext) {}
 
@@ -44,12 +46,22 @@ export class TargetMap {
     return findKey(this.context.globalState.get<Record<string, string>>("mainframeFtps.map", {}), uri.fsPath);
   }
 
+  /**
+   * Associa o ficheiro a um destino. O servidor ativo nesse momento fica registado,
+   * para avisar se o ficheiro for gravado ou submetido noutro servidor.
+   */
   async set(uri: vscode.Uri, target: Target | undefined): Promise<void> {
     const k = pathKey(uri.fsPath);
+    const server = target && target !== IGNORE ? activeServer()?.name : undefined;
     if (target === undefined) {
       this.cache.delete(k);
     } else {
       this.cache.set(k, target);
+    }
+    if (server) {
+      this.serverCache.set(k, server);
+    } else {
+      this.serverCache.delete(k);
     }
     const loc = this.locate(uri);
     if (loc) {
@@ -62,19 +74,47 @@ export class TargetMap {
           data.lastPds = pdsOf(target);
         }
       }
+      if (server) {
+        data.servers[loc.rel] = server;
+      } else {
+        delete data.servers[loc.rel];
+      }
       await this.write(loc.folder, data);
       return;
     }
     const all = { ...this.context.globalState.get<Record<string, string>>("mainframeFtps.map", {}) };
+    const allServers = { ...this.context.globalState.get<Record<string, string>>("mainframeFtps.mapServers", {}) };
     if (target === undefined) {
       delete all[uri.fsPath];
     } else {
       all[uri.fsPath] = target;
     }
+    if (server) {
+      allServers[uri.fsPath] = server;
+    } else {
+      delete allServers[uri.fsPath];
+    }
     await this.context.globalState.update("mainframeFtps.map", all);
+    await this.context.globalState.update("mainframeFtps.mapServers", allServers);
     if (target && target !== IGNORE) {
       await this.context.globalState.update("mainframeFtps.lastPds", pdsOf(target));
     }
+  }
+
+  /** Servidor de onde o ficheiro veio (ou para onde foi gravado pela última vez). */
+  async serverOf(uri: vscode.Uri): Promise<string | undefined> {
+    const k = pathKey(uri.fsPath);
+    if (this.serverCache.has(k)) {
+      return this.serverCache.get(k);
+    }
+    const loc = this.locate(uri);
+    if (loc) {
+      const hit = findKey((await this.read(loc.folder)).servers, loc.rel);
+      if (hit !== undefined) {
+        return hit;
+      }
+    }
+    return findKey(this.context.globalState.get<Record<string, string>>("mainframeFtps.mapServers", {}), uri.fsPath);
   }
 
   async lastPds(uri: vscode.Uri): Promise<string> {
@@ -105,9 +145,9 @@ export class TargetMap {
     try {
       const bytes = await vscode.workspace.fs.readFile(this.fileUri(folder));
       const parsed = JSON.parse(Buffer.from(bytes).toString("utf8"));
-      return { lastPds: parsed.lastPds ?? "", files: parsed.files ?? {} };
+      return { lastPds: parsed.lastPds ?? "", files: parsed.files ?? {}, servers: parsed.servers ?? {} };
     } catch {
-      return { lastPds: "", files: {} };
+      return { lastPds: "", files: {}, servers: {} };
     }
   }
 
@@ -121,6 +161,8 @@ export class TargetMap {
 interface MapData {
   lastPds: string;
   files: Record<string, string>;
+  /** Servidor de cada ficheiro (mesmas chaves que files). */
+  servers: Record<string, string>;
 }
 
 const isWindows = process.platform === "win32";

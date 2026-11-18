@@ -3,7 +3,7 @@ import * as path from "path";
 import { FtpSession, CancelledError, errText } from "./session";
 import { TargetMap, IGNORE, validateDsn, validateMember, suggestMember, pdsOf, memberOf } from "./mapping";
 import { JobsProvider, JobInfo, parseJobList, parseJobLine, severity } from "./jobs";
-import { getConfig } from "./config";
+import { getConfig, initServers, servers } from "./config";
 import { DatasetsProvider } from "./datasets";
 import { registerBrowse } from "./browse";
 import { encode, decode, unsupported } from "./codec";
@@ -21,6 +21,7 @@ const SPOOL_SCHEME = "mfspool";
 export function activate(context: vscode.ExtensionContext) {
   log = vscode.window.createOutputChannel("Mainframe FTPS");
   log.appendLine(`Mainframe FTPS ${context.extension.packageJSON.version} ativa (VS Code ${vscode.version}).`);
+  initServers(context);
   session = new FtpSession(context, log);
   targets = new TargetMap(context);
   jobs = new JobsProvider(context, session, log);
@@ -95,7 +96,7 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.languages.registerDocumentSymbolProvider(spoolSelector, symbolProvider, { label: "Spool" }),
     vscode.languages.registerFoldingRangeProvider(spoolSelector, foldingProvider),
     spoolChanged,
-    session.onDidChangeState((up) => up && jobs.refreshAll()),
+    session.onDidChangeState(() => jobs.refreshAll()),
 
     vscode.workspace.onDidSaveTextDocument((doc) =>
       onSave(doc).catch((err) => {
@@ -111,6 +112,7 @@ export function activate(context: vscode.ExtensionContext) {
       vscode.window.setStatusBarMessage("$(plug) Ligado ao mainframe", 3000);
     }),
     cmd("mainframeFtps.disconnect", async () => session.disconnect()),
+    cmd("mainframeFtps.selectServer", selectServer),
     cmd("mainframeFtps.forgetPin", async () => {
       await session.forgetPin();
       vscode.window.showInformationMessage("PIN esquecido.");
@@ -138,6 +140,7 @@ export function activate(context: vscode.ExtensionContext) {
       if (doc.isDirty) {
         await doc.save(); // dispara também a gravação no mainframe
       }
+      await checkServer(doc, "submeter");
       const data = await prepareText(doc, "submeter");
       const jobName = /^\/\/(\S+)\s+JOB\b/m.exec(doc.getText())?.[1]?.toUpperCase() ?? "";
       await submitJcl(data, jobName, path.basename(doc.fileName));
@@ -226,6 +229,78 @@ export function deactivate() {
   session?.disconnect();
 }
 
+// ---------------------------------------------------------------- servidores
+
+/** Lista de servidores (barra de estado e vista Mainframe). */
+async function selectServer(): Promise<void> {
+  const list = servers();
+  type Item = vscode.QuickPickItem & { server?: string; action?: "disconnect" | "settings" };
+  const current = session.server;
+  const items: Item[] = list.map((s) => ({
+    label: `${s.name === current ? "$(check)" : "$(server)"} ${s.name}`,
+    description: s.name === s.host ? `porta ${s.port}` : `${s.host}:${s.port}`,
+    detail: s.name === current ? (session.isConnected ? "Ligado" : "Próximo a ligar") : undefined,
+    server: s.name,
+  }));
+  items.push({ label: "", kind: vscode.QuickPickItemKind.Separator });
+  if (session.isConnected) {
+    items.push({ label: "$(debug-disconnect) Desligar", action: "disconnect" });
+  }
+  items.push({
+    label: "$(gear) Editar lista de servidores…",
+    description: "mainframeFtps.hosts",
+    action: "settings",
+  });
+  const pick = await vscode.window.showQuickPick(items, {
+    title: "Servidor mainframe",
+    placeHolder: list.length ? "Escolha o servidor (fecha a sessão atual e pede PIN + token)" : "Ainda não há servidores",
+  });
+  if (!pick) {
+    return;
+  }
+  if (pick.action === "disconnect") {
+    session.disconnect();
+    return;
+  }
+  if (pick.action === "settings") {
+    await vscode.commands.executeCommand("workbench.action.openSettings", "mainframeFtps.hosts");
+    return;
+  }
+  if (pick.server) {
+    await session.switchServer(pick.server);
+    vscode.window.setStatusBarMessage(`$(server) Ligado a ${pick.server}`, 4000);
+  }
+}
+
+/**
+ * Se o ficheiro veio de outro servidor, pergunta se é para gravar/submeter no atual
+ * ou mudar para o de origem. Devolve true se o utilizador escolheu o servidor atual
+ * apesar de o ficheiro vir de outro (o ficheiro passa a pertencer ao atual).
+ */
+async function checkServer(doc: vscode.TextDocument, action: string): Promise<boolean> {
+  const from = await targets.serverOf(doc.uri);
+  const now = session.server;
+  if (!from || !now || from === now || !servers().some((s) => s.name === from)) {
+    return false;
+  }
+  const here = `${capitalize(action)} em ${now}`;
+  const there = `Mudar para ${from} e ${action}`;
+  const a = await vscode.window.showWarningMessage(
+    `${path.basename(doc.fileName)} veio de ${from}, mas está a usar ${now}.`,
+    { modal: true, detail: `Escolha onde ${action}.` },
+    there,
+    here
+  );
+  if (a === there) {
+    await session.switchServer(from);
+    return false;
+  }
+  if (a === here) {
+    return action === "gravar";
+  }
+  throw new CancelledError();
+}
+
 // --------------------------------------------------------------------- gravar
 
 async function onSave(doc: vscode.TextDocument): Promise<void> {
@@ -296,6 +371,9 @@ async function onSave(doc: vscode.TextDocument): Promise<void> {
 }
 
 async function upload(doc: vscode.TextDocument, target: string): Promise<void> {
+  if (await checkServer(doc, "gravar")) {
+    await targets.set(doc.uri, target); // passa a pertencer ao servidor atual
+  }
   const data = await prepareText(doc, "gravar");
   log.appendLine(`A gravar ${path.basename(doc.fileName)} em ${target} (${data.length} bytes)`);
   await vscode.window.withProgress(

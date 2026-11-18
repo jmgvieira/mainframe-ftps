@@ -1,8 +1,8 @@
 {
   "name": "mainframe-ftps",
   "displayName": "Mainframe FTPS (z/OS)",
-  "description": "Navega nos data sets do z/OS, edita membros com gravação automática no PDS, submete jobs e mostra o spool, numa única sessão FTPS com keepalive e login por PIN + token.",
-  "version": "0.3.5",
+  "description": "Browse z/OS data sets, edit members with automatic save to the PDS, submit jobs and view the spool, over a single FTPS session with keepalive and PIN + token login.",
+  "version": "0.4.0",
   "publisher": "JorgeMiguel",
   "license": "MIT",
   "icon": "icon.png",
@@ -191,6 +191,12 @@
         "command": "mainframeFtps.newDatasetLike",
         "title": "Novo data set igual a este…",
         "category": "Mainframe"
+      },
+      {
+        "command": "mainframeFtps.selectServer",
+        "title": "Escolher servidor",
+        "category": "Mainframe",
+        "icon": "$(server)"
       }
     ],
     "views": {
@@ -229,6 +235,11 @@
     ],
     "menus": {
       "view/title": [
+        {
+          "command": "mainframeFtps.selectServer",
+          "when": "view == mainframeFtps.datasets && mainframeFtps.multipleServers",
+          "group": "navigation@0"
+        },
         {
           "command": "mainframeFtps.connect",
           "when": "view == mainframeFtps.datasets && !mainframeFtps.connected",
@@ -365,7 +376,7 @@
       "editor/title": [
         {
           "command": "mainframeFtps.submit",
-          "when": "resourceExtname =~ /^\\.(jcl|JCL)$/",
+          "when": "resourceExtname =~ /^\\.(jcl|JCL)$/ || editorLangId =~ /jcl/i || mainframeFtps.activeIsJcl",
           "group": "navigation@50"
         }
       ],
@@ -459,17 +470,23 @@
     "configuration": {
       "title": "Mainframe FTPS",
       "properties": {
+        "mainframeFtps.hosts": {
+          "type": "string",
+          "default": "",
+          "order": 0,
+          "markdownDescription": "Mainframe servers, separated by `;`. Each entry is `NAME=host:port`; the name and the port are optional (without a name the host is shown, without a port `#mainframeFtps.port#` is used).\n\nExample: `PROD=mvs1.company.com;TEST=mvs2.company.com:991;mvs3.company.com`\n\nPick the server by clicking the **MF** indicator in the status bar or the server button in the **Mainframe** view. The user, PIN, TLS mode and code page are the same for every server."
+        },
         "mainframeFtps.host": {
           "type": "string",
           "default": "",
           "order": 1,
-          "description": "Endereço do servidor FTP do z/OS."
+          "markdownDescription": "z/OS FTP server address. Kept for compatibility: prefer the list in `#mainframeFtps.hosts#`. If filled in, it appears as the first server of the list."
         },
         "mainframeFtps.port": {
           "type": "number",
           "default": 990,
           "order": 2,
-          "description": "Porta FTPS."
+          "markdownDescription": "Default FTPS port, used for servers in `#mainframeFtps.hosts#` without an explicit port."
         },
         "mainframeFtps.tlsMode": {
           "type": "string",
@@ -480,28 +497,28 @@
           "default": "explicit",
           "order": 3,
           "enumDescriptions": [
-            "FTPS explícito (AUTH TLS após ligar)",
-            "FTPS implícito (TLS logo à ligação)"
+            "Explicit FTPS (AUTH TLS after connecting)",
+            "Implicit FTPS (TLS from the start)"
           ],
-          "description": "Modo TLS. Se o login falhar logo no início com timeout, experimente o outro modo."
+          "description": "TLS mode. If the login times out right at the start, try the other mode."
         },
         "mainframeFtps.rejectUnauthorizedCertificates": {
           "type": "boolean",
           "default": true,
           "order": 4,
-          "description": "Recusar certificados não confiáveis. Desative só se o certificado do mainframe for de uma CA interna não instalada no Windows."
+          "description": "Reject untrusted certificates. Disable only if the mainframe certificate is issued by an internal CA that is not installed in Windows."
         },
         "mainframeFtps.tlsServerName": {
           "type": "string",
           "default": "",
           "order": 5,
-          "description": "Nome do servidor para SNI/validação do certificado (opcional)."
+          "description": "Server name for SNI / certificate validation (optional)."
         },
         "mainframeFtps.user": {
           "type": "string",
           "default": "",
           "order": 6,
-          "description": "Utilizador TSO. Se vazio, é pedido ao ligar."
+          "description": "TSO user ID. If empty, it is asked for when connecting."
         },
         "mainframeFtps.passcodeOrder": {
           "type": "string",
@@ -512,36 +529,36 @@
           "default": "pinThenToken",
           "order": 7,
           "enumDescriptions": [
-            "Password = PIN fixo + token",
-            "Password = token + PIN fixo"
+            "Password = fixed PIN + token",
+            "Password = token + fixed PIN"
           ],
-          "description": "Ordem em que o PIN fixo e o token são escritos (seguidos, num só campo)."
+          "description": "Order in which the fixed PIN and the token are typed (together, in a single field)."
         },
         "mainframeFtps.rememberPin": {
           "type": "boolean",
           "default": false,
           "order": 8,
-          "description": "Guardar o PIN fixo no cofre de credenciais do sistema (o token é sempre pedido)."
+          "description": "Store the fixed PIN in the operating system credential store (the token is always asked for)."
         },
         "mainframeFtps.keepAliveSeconds": {
           "type": "number",
           "default": 60,
           "minimum": 0,
           "order": 9,
-          "description": "Intervalo do NOOP de keepalive em segundos (0 = desligado). Deve ser bem inferior ao timeout do servidor (~4 min)."
+          "description": "Keepalive NOOP interval in seconds (0 = off). Must be well below the server idle timeout (~4 min)."
         },
         "mainframeFtps.idleDisconnectMinutes": {
           "type": "number",
           "default": 0,
           "minimum": 0,
           "order": 10,
-          "description": "Desligar após N minutos sem operações do utilizador (0 = nunca)."
+          "description": "Disconnect after N minutes without user operations (0 = never)."
         },
         "mainframeFtps.timeoutSeconds": {
           "type": "number",
           "default": 30,
           "order": 11,
-          "description": "Timeout de cada operação FTP."
+          "description": "Timeout of each FTP operation, in seconds."
         },
         "mainframeFtps.siteCommands": {
           "type": "array",
@@ -550,13 +567,13 @@
           },
           "default": [],
           "order": 12,
-          "markdownDescription": "Comandos `SITE` enviados logo após o login, sem a palavra SITE. Ex.: `SBDATACONN=(IBM-1047,ISO8859-1)`, `TRAILINGBLANKS`."
+          "markdownDescription": "`SITE` commands sent right after login, without the word SITE. E.g. `SBDATACONN=(IBM-1047,ISO8859-1)`, `TRAILINGBLANKS`."
         },
         "mainframeFtps.autoUploadOnSave": {
           "type": "boolean",
           "default": true,
           "order": 13,
-          "description": "Gravar no mainframe sempre que o ficheiro é guardado."
+          "description": "Save to the mainframe every time the file is saved."
         },
         "mainframeFtps.fileExtensions": {
           "type": "array",
@@ -571,13 +588,13 @@
             ".proc"
           ],
           "order": 14,
-          "description": "Extensões para as quais é perguntado o destino na primeira gravação."
+          "description": "File extensions for which the mainframe destination is asked on the first save (files opened from the Mainframe view already know their destination)."
         },
         "mainframeFtps.hostCodePage": {
           "type": "string",
           "default": "IBM-1147",
           "order": 15,
-          "markdownDescription": "Código de página EBCDIC do mainframe. É enviado após o login como `SITE SBDATACONN=(<este>,<transferEncoding>)`. Vazio = usar a configuração do servidor. IBM-1147 = França com €."
+          "markdownDescription": "Mainframe EBCDIC code page. Sent after login as `SITE SBDATACONN=(<this>,<transferEncoding>)`. Empty = use the server configuration. IBM-1147 = France with €."
         },
         "mainframeFtps.transferEncoding": {
           "type": "string",
@@ -589,29 +606,29 @@
           "default": "iso8859-15",
           "order": 16,
           "enumDescriptions": [
-            "ISO-8859-15 (Latin-9, com €) – recomendado com IBM-1147",
-            "ISO-8859-1 (Latin-1, sem €)",
-            "UTF-8 (requer configuração MBCS no servidor)"
+            "ISO-8859-15 (Latin-9, with €) – recommended with IBM-1147",
+            "ISO-8859-1 (Latin-1, without €)",
+            "UTF-8 (requires MBCS configuration on the server)"
           ],
-          "description": "Codificação do lado do PC na transferência ASCII."
+          "description": "PC-side encoding of the ASCII transfer."
         },
         "mainframeFtps.recordLength": {
           "type": "number",
           "default": 80,
           "order": 17,
-          "description": "LRECL esperado; avisa se houver linhas mais compridas."
+          "description": "Expected LRECL; you are warned about longer lines."
         },
         "mainframeFtps.jobPollSeconds": {
           "type": "number",
           "default": 5,
           "order": 18,
-          "description": "Intervalo de consulta do estado de um job submetido."
+          "description": "Interval, in seconds, for checking the status of a submitted job."
         },
         "mainframeFtps.jobPollMaxMinutes": {
           "type": "number",
           "default": 10,
           "order": 19,
-          "description": "Tempo máximo a acompanhar um job submetido."
+          "description": "Maximum time, in minutes, to follow a submitted job."
         },
         "mainframeFtps.datasetFilters": {
           "type": "array",
@@ -620,13 +637,13 @@
           },
           "default": [],
           "order": 20,
-          "description": "Filtros de data sets mostrados na vista Mainframe (ex.: U12345.*)."
+          "description": "Data set filters shown in the Mainframe view (e.g. U12345.*)."
         },
         "mainframeFtps.localFolder": {
           "type": "string",
           "default": "",
           "order": 21,
-          "markdownDescription": "Pasta local onde ficam os membros abertos a partir da vista, com o mesmo nome que no mainframe (`<PDS>/<MEMBRO>`). Vazio = `mainframe/` dentro da pasta aberta no VS Code. Pode usar `${workspaceFolder}`."
+          "markdownDescription": "Local folder for members opened from the Mainframe view, with the same names as on the mainframe (`<PDS>/<MEMBER>`). Empty = `mainframe/` inside the folder open in VS Code. `${workspaceFolder}` and relative paths are accepted."
         },
         "mainframeFtps.qualifierExtensions": {
           "type": "object",
@@ -635,19 +652,19 @@
           },
           "default": {},
           "order": 22,
-          "markdownDescription": "Tipo (linguagem) por qualificador do data set, dado como extensão, além das predefinidas (JCL/CNTL/PROC → .jcl, EZT/EASY → .ezt, COBOL → .cbl, COPY → .cpy). Ex.: `{ \"JOBLIB\": \".jcl\" }`."
+          "markdownDescription": "Language by data set qualifier, given as a file extension, in addition to the built-in ones (JCL/CNTL/PROC → .jcl, EZT/EASY → .ezt, COBOL → .cbl, COPY → .cpy). E.g. `{ \"JOBLIB\": \".jcl\" }`."
         },
         "mainframeFtps.defaultExtension": {
           "type": "string",
           "default": ".jcl",
           "order": 23,
-          "markdownDescription": "Tipo (linguagem) dos data sets cujo nome não o indica, dado como extensão: `.jcl`, `.ezt`, `.cbl`, `.txt`… Os ficheiros locais ficam com o mesmo nome que no mainframe, sem extensão."
+          "markdownDescription": "Language for data sets whose name does not indicate it, given as a file extension: `.jcl`, `.ezt`, `.cbl`, `.txt`… Local files keep the mainframe name, without an extension."
         },
         "mainframeFtps.spoolStripAsa": {
           "type": "boolean",
           "default": true,
           "order": 20,
-          "description": "No spool, retirar o carácter de controlo de impressão (ASA) da coluna 1 quando o ficheiro o tiver."
+          "description": "In the spool, remove the print control character (ASA) from column 1 when the file has one."
         }
       }
     },
@@ -663,7 +680,7 @@
     "colors": [
       {
         "id": "mainframeFtps.connectedForeground",
-        "description": "Cor do indicador de autenticação quando ligado.",
+        "description": "Color of the authentication indicator when connected.",
         "defaults": {
           "dark": "#3FB950",
           "light": "#1A7F37",
@@ -673,7 +690,7 @@
       },
       {
         "id": "mainframeFtps.disconnectedForeground",
-        "description": "Cor do indicador de autenticação quando desligado.",
+        "description": "Color of the authentication indicator when disconnected.",
         "defaults": {
           "dark": "#8B949E",
           "light": "#6E7781",
