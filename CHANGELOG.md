@@ -1,9 +1,12 @@
 # Changelog
 
-## 0.3.3
-- Corrigido: um data set aberto a partir da vista Mainframe podia não ser gravado no mainframe ao guardar (sobretudo com a extensão `.txt`), sem qualquer aviso. Os ficheiros na pasta local (`mainframe/<PDS>/<MEMBRO>` ou `mainframe/<DSN>`) passam a ser sempre reconhecidos pelo caminho.
-- No Windows, a associação ficheiro → data set deixa de depender de maiúsculas/minúsculas no caminho.
+## 0.3.4
 - Os ficheiros locais têm o mesmo nome que no mainframe, sem `.txt` nem outra extensão: `mainframe/<PDS>/<MEMBRO>` e `mainframe/<DSN>`. A linguagem (JCL, Easytrieve, COBOL) é escolhida pelos qualificadores; quando o nome não a indica, usa `defaultExtension` (por omissão `.jcl`).
+- Os ficheiros descarregados com extensão pelas versões anteriores continuam a ser gravados no data set certo.
+
+## 0.3.3
+- Corrigido: um data set aberto a partir da vista Mainframe podia não ser gravado no mainframe ao guardar (sobretudo com a extensão `.txt`), sem qualquer aviso. Os ficheiros na pasta local (`mainframe/<PDS>/<MEMBRO>.<ext>` ou `mainframe/<DSN>.<ext>`) passam a ser sempre reconhecidos pelo caminho.
+- No Windows, a associação ficheiro → data set deixa de depender de maiúsculas/minúsculas no caminho.
 - `localFolder` aceita um caminho relativo à pasta do workspace.
 - O log (Mainframe: Mostrar log) regista cada abertura e gravação, e o motivo quando um ficheiro guardado não é enviado.
 
