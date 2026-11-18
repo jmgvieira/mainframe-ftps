@@ -37,7 +37,8 @@ export function extFor(dsn: string): string {
       return map[q];
     }
   }
-  return ".txt";
+  const def = vscode.workspace.getConfiguration("mainframeFtps").get<string>("defaultExtension", ".jcl").trim() || ".jcl";
+  return def.startsWith(".") ? def : "." + def;
 }
 
 export function registerBrowse(d: Deps): vscode.Disposable[] {

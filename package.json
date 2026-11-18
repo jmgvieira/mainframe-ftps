@@ -637,6 +637,12 @@
           "order": 22,
           "markdownDescription": "Extensão local por qualificador do data set, além das predefinidas (JCL/CNTL/PROC → .jcl, EZT/EASY → .ezt, COBOL → .cbl, COPY → .cpy). Ex.: `{ \"JOBLIB\": \".jcl\" }`."
         },
+        "mainframeFtps.defaultExtension": {
+          "type": "string",
+          "default": ".jcl",
+          "order": 23,
+          "markdownDescription": "Extensão local dos data sets cujo nome não indica o tipo (nenhum qualificador em `qualifierExtensions` nem nas predefinições). Ex.: `.jcl`, `.ezt`, `.txt`."
+        },
         "mainframeFtps.spoolStripAsa": {
           "type": "boolean",
           "default": true,
