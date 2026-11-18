@@ -2,7 +2,7 @@
   "name": "mainframe-ftps",
   "displayName": "Mainframe FTPS (z/OS)",
   "description": "Navega nos data sets do z/OS, edita membros com gravação automática no PDS, submete jobs e mostra o spool, numa única sessão FTPS com keepalive e login por PIN + token.",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "publisher": "JorgeMiguel",
   "license": "MIT",
   "icon": "icon.png",

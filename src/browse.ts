@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import { FtpSession, CancelledError, errText, AllocOptions } from "./session";
 import { DatasetsProvider, MfNode, DsInfo } from "./datasets";
-import { TargetMap, validateDsn, validateMember, pdsOf, memberOf } from "./mapping";
+import { TargetMap, validateDsn, validateMember, pdsOf, memberOf, localBase } from "./mapping";
 import { decode } from "./codec";
 import { getConfig } from "./config";
 
@@ -53,18 +53,7 @@ export function registerBrowse(d: Deps): vscode.Disposable[] {
   // ------------------------------------------------------------- local files
 
   function localUri(target: string): vscode.Uri {
-    const cfg = vscode.workspace.getConfiguration("mainframeFtps");
-    const ws = vscode.workspace.workspaceFolders?.[0]?.uri;
-    let base: vscode.Uri;
-    const configured = cfg.get<string>("localFolder", "").trim();
-    if (configured) {
-      const resolved = ws ? configured.replace("${workspaceFolder}", ws.fsPath) : configured;
-      base = vscode.Uri.file(resolved);
-    } else if (ws) {
-      base = vscode.Uri.joinPath(ws, "mainframe");
-    } else {
-      base = vscode.Uri.joinPath(d.context.globalStorageUri, "mainframe");
-    }
+    const base = localBase(d.context);
     const ext = extFor(target);
     const member = memberOf(target);
     return member
@@ -100,6 +89,7 @@ export function registerBrowse(d: Deps): vscode.Disposable[] {
     await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(uri, ".."));
     await vscode.workspace.fs.writeFile(uri, Buffer.from(text, "utf8"));
     await targets.set(uri, target);
+    d.log.appendLine(`Aberto ${target} em ${uri.fsPath}`);
     const doc = await vscode.workspace.openTextDocument(uri);
     await vscode.window.showTextDocument(doc, { preview: false });
     if (revert) {

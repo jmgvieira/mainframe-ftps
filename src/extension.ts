@@ -222,16 +222,30 @@ export function deactivate() {
 
 async function onSave(doc: vscode.TextDocument): Promise<void> {
   const cfg = getConfig();
-  if (!cfg.autoUploadOnSave || doc.uri.scheme !== "file") {
+  if (doc.uri.scheme !== "file") {
+    return;
+  }
+  const name = path.basename(doc.fileName);
+  if (!cfg.autoUploadOnSave) {
+    log.appendLine(`Guardado ${name}: não enviado (autoUploadOnSave desligado).`);
     return;
   }
   const ext = path.extname(doc.fileName).toLowerCase();
   let target = await targets.get(doc.uri);
   if (target === IGNORE) {
+    log.appendLine(`Guardado ${name}: não enviado (marcado "Nunca para este ficheiro").`);
     return;
+  }
+  if (target && (await targets.stored(doc.uri)) === undefined) {
+    // Destino deduzido pela pasta local (mainframe/<PDS>/<MEMBRO>.<ext>): fica associado.
+    await targets.set(doc.uri, target);
   }
   if (!target) {
     if (!cfg.fileExtensions.includes(ext)) {
+      log.appendLine(
+        `Guardado ${doc.fileName}: sem destino no mainframe e a extensão ${ext || "(nenhuma)"} não está em ` +
+          "fileExtensions. Use \"Gravar ficheiro no mainframe\" para escolher o destino."
+      );
       return;
     }
     const choice = await vscode.window.showInformationMessage(
@@ -274,6 +288,7 @@ async function onSave(doc: vscode.TextDocument): Promise<void> {
 
 async function upload(doc: vscode.TextDocument, target: string): Promise<void> {
   const data = await prepareText(doc, "gravar");
+  log.appendLine(`A gravar ${path.basename(doc.fileName)} em ${target} (${data.length} bytes)`);
   await vscode.window.withProgress(
     { location: vscode.ProgressLocation.Window, title: `A gravar ${target}…` },
     () => session.uploadText(target, data)

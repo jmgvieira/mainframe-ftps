@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.3
+- Corrigido: um data set aberto a partir da vista Mainframe podia não ser gravado no mainframe ao guardar (sobretudo com a extensão `.txt`), sem qualquer aviso. Os ficheiros na pasta local (`mainframe/<PDS>/<MEMBRO>.<ext>` ou `mainframe/<DSN>.<ext>`) passam a ser sempre reconhecidos pelo caminho.
+- No Windows, a associação ficheiro → data set deixa de depender de maiúsculas/minúsculas no caminho.
+- `localFolder` aceita um caminho relativo à pasta do workspace.
+- O log (Mainframe: Mostrar log) regista cada abertura e gravação, e o motivo quando um ficheiro guardado não é enviado.
+
 ## 0.3.2
 - Sem alterações de funcionalidade: o pacote deixa de incluir um identificador interno que aparecia num comentário do código.
 

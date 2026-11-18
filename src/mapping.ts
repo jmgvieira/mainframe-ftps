@@ -13,18 +13,44 @@ const MAP_FILE = "mainframe-ftps.json";
  * fora de um workspace fica no estado global da extensão.
  */
 export class TargetMap {
+  /** Associações desta sessão do VS Code (não depende de ler o .json). */
+  private readonly cache = new Map<string, Target>();
+
   constructor(private readonly context: vscode.ExtensionContext) {}
 
+  /**
+   * Destino de um ficheiro: associação guardada ou, para ficheiros na pasta local
+   * da extensão (mainframe/<PDS>/<MEMBRO>.<ext> ou mainframe/<DSN>.<ext>), o destino
+   * deduzido do caminho.
+   */
   async get(uri: vscode.Uri): Promise<Target | undefined> {
+    return (await this.stored(uri)) ?? targetFromPath(uri, localBase(this.context));
+  }
+
+  /** Só a associação guardada, sem deduzir pelo caminho. */
+  async stored(uri: vscode.Uri): Promise<Target | undefined> {
+    const k = pathKey(uri.fsPath);
+    if (this.cache.has(k)) {
+      return this.cache.get(k);
+    }
     const loc = this.locate(uri);
     if (loc) {
       const data = await this.read(loc.folder);
-      return data.files[loc.rel];
+      const hit = findKey(data.files, loc.rel);
+      if (hit !== undefined) {
+        return hit;
+      }
     }
-    return this.context.globalState.get<Record<string, string>>("mainframeFtps.map", {})[uri.fsPath];
+    return findKey(this.context.globalState.get<Record<string, string>>("mainframeFtps.map", {}), uri.fsPath);
   }
 
   async set(uri: vscode.Uri, target: Target | undefined): Promise<void> {
+    const k = pathKey(uri.fsPath);
+    if (target === undefined) {
+      this.cache.delete(k);
+    } else {
+      this.cache.set(k, target);
+    }
     const loc = this.locate(uri);
     if (loc) {
       const data = await this.read(loc.folder);
@@ -95,6 +121,65 @@ export class TargetMap {
 interface MapData {
   lastPds: string;
   files: Record<string, string>;
+}
+
+const isWindows = process.platform === "win32";
+
+/** Chave para comparar caminhos (no Windows não distingue maiúsculas). */
+function pathKey(p: string): string {
+  return isWindows ? p.toLowerCase() : p;
+}
+
+function findKey(files: Record<string, string>, key: string): string | undefined {
+  if (key in files) {
+    return files[key];
+  }
+  if (isWindows) {
+    const k = key.toLowerCase();
+    const found = Object.keys(files).find((f) => f.toLowerCase() === k);
+    return found !== undefined ? files[found] : undefined;
+  }
+  return undefined;
+}
+
+/** Pasta onde ficam as cópias locais dos data sets abertos a partir da vista Mainframe. */
+export function localBase(context: vscode.ExtensionContext): vscode.Uri {
+  const cfg = vscode.workspace.getConfiguration("mainframeFtps");
+  const ws = vscode.workspace.workspaceFolders?.[0]?.uri;
+  const configured = cfg.get<string>("localFolder", "").trim();
+  if (configured) {
+    const resolved = ws ? configured.replace("${workspaceFolder}", ws.fsPath) : configured;
+    return ws && !path.isAbsolute(resolved) ? vscode.Uri.joinPath(ws, resolved) : vscode.Uri.file(resolved);
+  }
+  if (ws) {
+    return vscode.Uri.joinPath(ws, "mainframe");
+  }
+  return vscode.Uri.joinPath(context.globalStorageUri, "mainframe");
+}
+
+/**
+ * Deduz o destino de um ficheiro dentro da pasta local:
+ * <base>/<PDS>/<MEMBRO>.<ext> -> PDS(MEMBRO); <base>/<DSN>.<ext> -> DSN.
+ */
+export function targetFromPath(uri: vscode.Uri, base: vscode.Uri): Target | undefined {
+  if (uri.scheme !== base.scheme) {
+    return undefined;
+  }
+  const rel = path.relative(base.fsPath, uri.fsPath);
+  if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) {
+    return undefined;
+  }
+  const parts = rel.split(/[\\/]/);
+  if (parts.length === 2) {
+    const pds = parts[0].toUpperCase();
+    const member = path.parse(parts[1]).name.toUpperCase();
+    return !validateDsn(pds) && !validateMember(member) ? `${pds}(${member})` : undefined;
+  }
+  if (parts.length === 1) {
+    const dsn = path.parse(parts[0]).name.toUpperCase();
+    return !validateDsn(dsn) ? dsn : undefined;
+  }
+  return undefined;
 }
 
 export function pdsOf(target: string): string {
