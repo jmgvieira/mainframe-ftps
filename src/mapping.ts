@@ -159,7 +159,7 @@ export function localBase(context: vscode.ExtensionContext): vscode.Uri {
 
 /**
  * Deduz o destino de um ficheiro dentro da pasta local:
- * <base>/<PDS>/<MEMBRO>.<ext> -> PDS(MEMBRO); <base>/<DSN>.<ext> -> DSN.
+ * <base>/<PDS>/<MEMBRO> -> PDS(MEMBRO); <base>/<DSN> -> DSN.
  */
 export function targetFromPath(uri: vscode.Uri, base: vscode.Uri): Target | undefined {
   if (uri.scheme !== base.scheme) {
@@ -171,12 +171,17 @@ export function targetFromPath(uri: vscode.Uri, base: vscode.Uri): Target | unde
   }
   const parts = rel.split(/[\\/]/);
   if (parts.length === 2) {
+    // <PDS>/<MEMBRO> (ou <PDS>/<MEMBRO>.<ext> das versões anteriores)
     const pds = parts[0].toUpperCase();
-    const member = path.parse(parts[1]).name.toUpperCase();
+    let member = parts[1].toUpperCase();
+    if (validateMember(member)) {
+      member = path.parse(member).name;
+    }
     return !validateDsn(pds) && !validateMember(member) ? `${pds}(${member})` : undefined;
   }
   if (parts.length === 1) {
-    const dsn = path.parse(parts[0]).name.toUpperCase();
+    // <DSN>: o nome do ficheiro é o nome do data set
+    const dsn = parts[0].toUpperCase();
     return !validateDsn(dsn) ? dsn : undefined;
   }
   return undefined;

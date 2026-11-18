@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import { FtpSession, CancelledError, errText, AllocOptions } from "./session";
 import { DatasetsProvider, MfNode, DsInfo } from "./datasets";
-import { TargetMap, validateDsn, validateMember, pdsOf, memberOf, localBase } from "./mapping";
+import { TargetMap, IGNORE, validateDsn, validateMember, pdsOf, memberOf, localBase, targetFromPath } from "./mapping";
 import { decode } from "./codec";
 import { getConfig } from "./config";
 
@@ -24,9 +24,10 @@ const DEFAULT_EXT: Record<string, string> = {
   COPY: ".cpy", COPYLIB: ".cpy", CPY: ".cpy",
 };
 
-/** Extensão local a usar para um data set, pelos seus qualificadores. */
+/** Extensão que indica o tipo de um data set, pelos seus qualificadores (só para escolher a linguagem). */
 export function extFor(dsn: string): string {
-  const custom = vscode.workspace.getConfiguration("mainframeFtps").get<Record<string, string>>("qualifierExtensions", {});
+  const cfg = vscode.workspace.getConfiguration("mainframeFtps");
+  const custom = cfg.get<Record<string, string>>("qualifierExtensions", {});
   const map: Record<string, string> = { ...DEFAULT_EXT };
   for (const [k, v] of Object.entries(custom)) {
     map[k.toUpperCase()] = v.startsWith(".") ? v : "." + v;
@@ -37,8 +38,31 @@ export function extFor(dsn: string): string {
       return map[q];
     }
   }
-  const def = vscode.workspace.getConfiguration("mainframeFtps").get<string>("defaultExtension", ".jcl").trim() || ".jcl";
+  const def = cfg.get<string>("defaultExtension", ".jcl").trim() || ".jcl";
   return def.startsWith(".") ? def : "." + def;
+}
+
+/** Linguagem do VS Code associada a uma extensão (.jcl, .ezt…), pelas extensões instaladas. */
+function languageForExt(ext: string, known: string[]): string | undefined {
+  const e = ext.toLowerCase();
+  for (const x of vscode.extensions.all) {
+    const langs: any[] = x.packageJSON?.contributes?.languages ?? [];
+    for (const l of langs) {
+      if (Array.isArray(l.extensions) && l.extensions.some((v: string) => v.toLowerCase() === e) && known.includes(l.id)) {
+        return l.id;
+      }
+    }
+  }
+  return undefined;
+}
+
+/** Aplica a linguagem certa a um ficheiro local sem extensão (nome igual ao do mainframe). */
+async function applyLanguage(doc: vscode.TextDocument, target: string): Promise<void> {
+  const known = await vscode.languages.getLanguages();
+  const lang = languageForExt(extFor(target), known);
+  if (lang && doc.languageId !== lang) {
+    await vscode.languages.setTextDocumentLanguage(doc, lang);
+  }
 }
 
 export function registerBrowse(d: Deps): vscode.Disposable[] {
@@ -54,12 +78,10 @@ export function registerBrowse(d: Deps): vscode.Disposable[] {
   // ------------------------------------------------------------- local files
 
   function localUri(target: string): vscode.Uri {
+    // Mesmo nome que no mainframe: <base>/<PDS>/<MEMBRO> ou <base>/<DSN>
     const base = localBase(d.context);
-    const ext = extFor(target);
     const member = memberOf(target);
-    return member
-      ? vscode.Uri.joinPath(base, pdsOf(target), member + ext)
-      : vscode.Uri.joinPath(base, target + ext);
+    return member ? vscode.Uri.joinPath(base, pdsOf(target), member) : vscode.Uri.joinPath(base, target);
   }
 
   async function openRemote(target: string): Promise<void> {
@@ -91,7 +113,9 @@ export function registerBrowse(d: Deps): vscode.Disposable[] {
     await vscode.workspace.fs.writeFile(uri, Buffer.from(text, "utf8"));
     await targets.set(uri, target);
     d.log.appendLine(`Aberto ${target} em ${uri.fsPath}`);
-    const doc = await vscode.workspace.openTextDocument(uri);
+    let doc = await vscode.workspace.openTextDocument(uri);
+    await applyLanguage(doc, target);
+    doc = await vscode.workspace.openTextDocument(uri);
     await vscode.window.showTextDocument(doc, { preview: false });
     if (revert) {
       await vscode.commands.executeCommand("workbench.action.files.revert");
@@ -131,8 +155,25 @@ export function registerBrowse(d: Deps): vscode.Disposable[] {
 
   // ------------------------------------------------------------------ comandos
 
+  // Ficheiros sem extensão reabertos (restauro do VS Code, Explorador): repor a linguagem.
+  const fixLanguage = async (doc: vscode.TextDocument) => {
+    if (doc.uri.scheme !== "file" || doc.languageId !== "plaintext") {
+      return;
+    }
+    // Só ficheiros da pasta local da extensão
+    if (!targetFromPath(doc.uri, localBase(d.context))) {
+      return;
+    }
+    const target = await targets.get(doc.uri);
+    if (target && target !== IGNORE) {
+      await applyLanguage(doc, target).catch(() => undefined);
+    }
+  };
+  vscode.workspace.textDocuments.forEach((doc) => void fixLanguage(doc));
+
   return [
     view,
+    vscode.workspace.onDidOpenTextDocument((doc) => void fixLanguage(doc)),
     session.onDidChangeState(() => {
       updateDescription();
       datasets.refresh();
@@ -236,7 +277,9 @@ export function registerBrowse(d: Deps): vscode.Disposable[] {
         await vscode.workspace.fs.writeFile(uri, new Uint8Array());
       }
       await targets.set(uri, target);
-      await vscode.window.showTextDocument(uri, { preview: false });
+      const doc = await vscode.workspace.openTextDocument(uri);
+      await applyLanguage(doc, target);
+      await vscode.window.showTextDocument(doc, { preview: false });
       vscode.window.showInformationMessage(`${target} será criado no mainframe quando guardar (Ctrl+S).`);
     }),
 
