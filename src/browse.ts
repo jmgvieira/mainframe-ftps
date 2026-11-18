@@ -157,7 +157,7 @@ export function registerBrowse(d: Deps): vscode.Disposable[] {
 
   // Ficheiros sem extensão reabertos (restauro do VS Code, Explorador): repor a linguagem.
   const fixLanguage = async (doc: vscode.TextDocument) => {
-    if (doc.uri.scheme !== "file" || doc.languageId !== "plaintext") {
+    if (doc.uri.scheme === "untitled" || doc.languageId !== "plaintext") {
       return;
     }
     // Só ficheiros da pasta local da extensão

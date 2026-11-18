@@ -20,6 +20,7 @@ const SPOOL_SCHEME = "mfspool";
 
 export function activate(context: vscode.ExtensionContext) {
   log = vscode.window.createOutputChannel("Mainframe FTPS");
+  log.appendLine(`Mainframe FTPS ${context.extension.packageJSON.version} ativa (VS Code ${vscode.version}).`);
   session = new FtpSession(context, log);
   targets = new TargetMap(context);
   jobs = new JobsProvider(context, session, log);
@@ -96,7 +97,14 @@ export function activate(context: vscode.ExtensionContext) {
     spoolChanged,
     session.onDidChangeState((up) => up && jobs.refreshAll()),
 
-    vscode.workspace.onDidSaveTextDocument((doc) => onSave(doc)),
+    vscode.workspace.onDidSaveTextDocument((doc) =>
+      onSave(doc).catch((err) => {
+        log.appendLine(`Erro ao tratar a gravação de ${doc.uri.toString()}: ${errText(err)}`);
+        vscode.window.showErrorMessage(`Mainframe FTPS: erro ao gravar no mainframe: ${errText(err)}`, "Ver log").then(
+          (a) => a && log.show()
+        );
+      })
+    ),
 
     cmd("mainframeFtps.connect", async () => {
       await session.ensureConnected();
@@ -221,10 +229,11 @@ export function deactivate() {
 // --------------------------------------------------------------------- gravar
 
 async function onSave(doc: vscode.TextDocument): Promise<void> {
-  const cfg = getConfig();
-  if (doc.uri.scheme !== "file") {
+  if (doc.uri.scheme === SPOOL_SCHEME || doc.uri.scheme === "untitled") {
     return;
   }
+  log.appendLine(`Guardado ${doc.uri.toString()}`);
+  const cfg = getConfig();
   const name = path.basename(doc.fileName);
   if (!cfg.autoUploadOnSave) {
     log.appendLine(`Guardado ${name}: não enviado (autoUploadOnSave desligado).`);

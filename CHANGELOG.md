@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.5
+- A gravação no mainframe deixa de ignorar ficheiros abertos fora do disco local (por exemplo, pastas abertas por WSL, SSH ou outro modo remoto).
+- O log mostra a versão da extensão ao arrancar, cada ficheiro guardado e qualquer erro durante a gravação, que passa também a aparecer numa mensagem.
+
 ## 0.3.4
 - Os ficheiros locais têm o mesmo nome que no mainframe, sem `.txt` nem outra extensão: `mainframe/<PDS>/<MEMBRO>` e `mainframe/<DSN>`. A linguagem (JCL, Easytrieve, COBOL) é escolhida pelos qualificadores; quando o nome não a indica, usa `defaultExtension` (por omissão `.jcl`).
 - Os ficheiros descarregados com extensão pelas versões anteriores continuam a ser gravados no data set certo.
