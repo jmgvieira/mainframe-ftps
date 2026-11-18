@@ -71,19 +71,41 @@ export function initServers(context: vscode.ExtensionContext): void {
   state = context.globalState;
 }
 
-/**
- * Servidores disponíveis: os de `mainframeFtps.hosts` e, se estiver preenchido e não
- * constar da lista, o `mainframeFtps.host` antigo (fica em primeiro lugar).
- */
+/** Servidores disponíveis (`mainframeFtps.hosts`). */
 export function servers(): ServerDef[] {
   const c = vscode.workspace.getConfiguration("mainframeFtps");
-  const defaultPort = c.get<number>("port", 990);
-  const list = parseHosts(c.get<string>("hosts", ""), defaultPort);
-  const legacy = c.get<string>("host", "").trim();
-  if (legacy && !list.some((s) => s.host.toLowerCase() === legacy.toLowerCase() && s.port === defaultPort)) {
-    list.unshift({ name: legacy, host: legacy, port: defaultPort });
+  return parseHosts(c.get<string>("hosts", ""), c.get<number>("port", 990));
+}
+
+/**
+ * Até à 0.4.x havia um só servidor em `mainframeFtps.host`. Ao arrancar, esse valor passa
+ * para `mainframeFtps.hosts` (se ainda estiver vazio no mesmo nível) e o `host` é apagado.
+ */
+export async function migrateLegacyHost(log: (msg: string) => void): Promise<void> {
+  const c = vscode.workspace.getConfiguration("mainframeFtps");
+  const host = c.inspect<string>("host");
+  const hosts = c.inspect<string>("hosts");
+  const levels: Array<[vscode.ConfigurationTarget, string | undefined, string | undefined]> = [
+    [vscode.ConfigurationTarget.Global, host?.globalValue, hosts?.globalValue],
+    [vscode.ConfigurationTarget.Workspace, host?.workspaceValue, hosts?.workspaceValue],
+  ];
+  for (const [target, oldHost, current] of levels) {
+    const value = (oldHost ?? "").trim();
+    if (!value) {
+      continue;
+    }
+    try {
+      if (!(current ?? "").trim()) {
+        await c.update("hosts", value, target);
+        log(`Setting mainframeFtps.host (${value}) moved to mainframeFtps.hosts.`);
+      } else {
+        log(`Setting mainframeFtps.host (${value}) removed: mainframeFtps.hosts is already filled in.`);
+      }
+      await c.update("host", undefined, target);
+    } catch (err) {
+      log(`Could not migrate mainframeFtps.host: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
-  return list;
 }
 
 /** Servidor em uso: o último escolhido, se ainda existir na lista, senão o primeiro. */

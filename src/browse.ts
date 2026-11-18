@@ -5,6 +5,8 @@ import { TargetMap, IGNORE, validateDsn, validateMember, pdsOf, memberOf, localB
 import { decode } from "./codec";
 import { getConfig } from "./config";
 
+const ASKED_KEY = "mainframeFtps.localFolderAsked";
+
 interface Deps {
   context: vscode.ExtensionContext;
   session: FtpSession;
@@ -84,35 +86,82 @@ export function registerBrowse(d: Deps): vscode.Disposable[] {
     return member ? vscode.Uri.joinPath(base, pdsOf(target), member) : vscode.Uri.joinPath(base, target);
   }
 
+  /** Pergunta (uma vez) onde guardar, se não há pasta configurada nem pasta aberta no VS Code. */
+  async function ensureLocalFolder(): Promise<void> {
+    const cfg = vscode.workspace.getConfiguration("mainframeFtps");
+    if (cfg.get<string>("localFolder", "").trim() || vscode.workspace.workspaceFolders?.length) {
+      return;
+    }
+    if (d.context.globalState.get<boolean>(ASKED_KEY)) {
+      return;
+    }
+    const choose = "Choose folder…";
+    const storage = "Use VS Code storage";
+    const a = await vscode.window.showInformationMessage(
+      "Where should files opened from the mainframe be kept on this PC?",
+      { modal: true, detail: "No folder is open in VS Code. You can change this later with \"Choose local folder\"." },
+      choose,
+      storage
+    );
+    if (a === choose) {
+      await chooseLocalFolder();
+    } else if (a === storage) {
+      await d.context.globalState.update(ASKED_KEY, true);
+    } else {
+      throw new CancelledError();
+    }
+  }
+
+  async function chooseLocalFolder(): Promise<boolean> {
+    const picked = await vscode.window.showOpenDialog({
+      canSelectFolders: true,
+      canSelectFiles: false,
+      canSelectMany: false,
+      defaultUri: localBase(d.context),
+      openLabel: "Use this folder",
+      title: "Local folder for mainframe files",
+    });
+    if (!picked?.length) {
+      return false;
+    }
+    await vscode.workspace
+      .getConfiguration("mainframeFtps")
+      .update("localFolder", picked[0].fsPath, vscode.ConfigurationTarget.Global);
+    d.log.appendLine(`Local folder: ${picked[0].fsPath}`);
+    vscode.window.setStatusBarMessage(`$(folder) Local folder: ${picked[0].fsPath}`, 5000);
+    return true;
+  }
+
   async function openRemote(target: string): Promise<void> {
+    await ensureLocalFolder();
     const uri = localUri(target);
     const already = vscode.workspace.textDocuments.find((doc) => doc.uri.fsPath === uri.fsPath);
     let revert = false;
     if (already?.isDirty) {
       const a = await vscode.window.showWarningMessage(
-        `${target} já está aberto com alterações por guardar.`,
+        `${target} is already open with unsaved changes.`,
         { modal: true },
-        "Abrir versão local",
-        "Descarregar de novo (perde as alterações)"
+        "Open local version",
+        "Download again (discard changes)"
       );
       if (!a) {
         return;
       }
-      if (a === "Abrir versão local") {
+      if (a === "Open local version") {
         await vscode.window.showTextDocument(already, { preview: false });
         return;
       }
       revert = true;
     }
     const buf = await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Notification, title: `A abrir ${target}…` },
+      { location: vscode.ProgressLocation.Notification, title: `Opening ${target}…` },
       () => session.downloadText(target)
     );
     const text = decode(buf, getConfig().transferEncoding).replace(/\r\n/g, "\n");
     await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(uri, ".."));
     await vscode.workspace.fs.writeFile(uri, Buffer.from(text, "utf8"));
     await targets.set(uri, target);
-    d.log.appendLine(`Aberto ${target} em ${uri.fsPath}`);
+    d.log.appendLine(`Opened ${target} in ${uri.fsPath}`);
     let doc = await vscode.workspace.openTextDocument(uri);
     await applyLanguage(doc, target);
     doc = await vscode.workspace.openTextDocument(uri);
@@ -131,7 +180,7 @@ export function registerBrowse(d: Deps): vscode.Disposable[] {
     if (node.kind === "ds") {
       return node.info.name;
     }
-    throw new Error("Escolha um data set ou membro.");
+    throw new Error("Choose a data set or member.");
   }
 
   async function pickPdsNode(node?: MfNode): Promise<DsInfo> {
@@ -142,8 +191,8 @@ export function registerBrowse(d: Deps): vscode.Disposable[] {
       return datasets.findDs(node.info.pds) ?? fakeDs(node.info.pds, "PO");
     }
     const name = await vscode.window.showInputBox({
-      title: "Biblioteca (PDS)",
-      prompt: "Nome do PDS",
+      title: "Library (PDS)",
+      prompt: "PDS name",
       ignoreFocusOut: true,
       validateInput: validateDsn,
     });
@@ -193,11 +242,11 @@ export function registerBrowse(d: Deps): vscode.Disposable[] {
 
     cmd("mainframeFtps.addFilter", async () => {
       const pattern = await vscode.window.showInputBox({
-        title: "Novo filtro de data sets",
-        prompt: "Padrão, como no ISPF 3.4 (ex.: U12345.*, PROD.JCL.*)",
+        title: "New data set filter",
+        prompt: "Pattern, as in ISPF 3.4 (e.g. U12345.*, PROD.JCL.*)",
         value: session.user ? `${session.user}.*` : "",
         ignoreFocusOut: true,
-        validateInput: (v) => (/^[A-Z#@$*%][A-Z0-9#@$.*%-]*$/i.test(v.trim()) ? undefined : "Padrão inválido"),
+        validateInput: (v) => (/^[A-Z#@$*%][A-Z0-9#@$.*%-]*$/i.test(v.trim()) ? undefined : "Invalid pattern"),
       });
       if (!pattern) {
         return;
@@ -215,7 +264,7 @@ export function registerBrowse(d: Deps): vscode.Disposable[] {
       if (node?.kind !== "filter") {
         return;
       }
-      const p = await vscode.window.showInputBox({ title: "Alterar filtro", value: node.pattern, ignoreFocusOut: true });
+      const p = await vscode.window.showInputBox({ title: "Edit filter", value: node.pattern, ignoreFocusOut: true });
       if (p) {
         await datasets.setFilters(datasets.filters().map((f) => (f === node.pattern ? p.trim().toUpperCase() : f)));
       }
@@ -237,8 +286,8 @@ export function registerBrowse(d: Deps): vscode.Disposable[] {
     cmd("mainframeFtps.openDataset", async (node: MfNode) => {
       if (node.kind === "ds" && node.info.migrated) {
         const ok = await vscode.window.showInformationMessage(
-          `${node.info.name} está migrado. Fazer recall e abrir? Pode demorar alguns minutos.`,
-          "Fazer recall"
+          `${node.info.name} is migrated. Recall and open it? This may take a few minutes.`,
+          "Recall"
         );
         if (!ok) {
           return;
@@ -247,7 +296,7 @@ export function registerBrowse(d: Deps): vscode.Disposable[] {
           await openRemote(node.info.name);
         } catch (err) {
           vscode.window.showInformationMessage(
-            `Recall pedido para ${node.info.name}. Atualize a lista daqui a pouco (${errText(err)}).`
+            `Recall requested for ${node.info.name}. Refresh the list in a moment (${errText(err)}).`
           );
         }
         return;
@@ -258,8 +307,8 @@ export function registerBrowse(d: Deps): vscode.Disposable[] {
     cmd("mainframeFtps.newMember", async (node?: MfNode) => {
       const pds = await pickPdsNode(node);
       const member = await vscode.window.showInputBox({
-        title: `Novo membro em ${pds.name}`,
-        prompt: "Nome do membro (até 8 caracteres)",
+        title: `New member in ${pds.name}`,
+        prompt: "Member name (up to 8 characters)",
         ignoreFocusOut: true,
         validateInput: validateMember,
       });
@@ -268,9 +317,10 @@ export function registerBrowse(d: Deps): vscode.Disposable[] {
       }
       const name = member.trim().toUpperCase();
       const target = `${pds.name}(${name})`;
+      await ensureLocalFolder();
       const existing = datasets.cachedMembers(pds.name) ?? [];
       if (existing.some((m) => m.name === name)) {
-        const a = await vscode.window.showWarningMessage(`${target} já existe.`, "Abrir");
+        const a = await vscode.window.showWarningMessage(`${target} already exists.`, "Open");
         if (a) {
           await openRemote(target);
         }
@@ -292,7 +342,7 @@ export function registerBrowse(d: Deps): vscode.Disposable[] {
       const doc = await vscode.workspace.openTextDocument(uri);
       await applyLanguage(doc, target);
       await vscode.window.showTextDocument(doc, { preview: false });
-      vscode.window.showInformationMessage(`${target} será criado no mainframe quando guardar (Ctrl+S).`);
+      vscode.window.showInformationMessage(`${target} will be created on the mainframe when you save (Ctrl+S).`);
     }),
 
     cmd("mainframeFtps.newDataset", async (node?: MfNode) => {
@@ -304,8 +354,8 @@ export function registerBrowse(d: Deps): vscode.Disposable[] {
           ? like.name
           : session.user;
       const name = await vscode.window.showInputBox({
-        title: like ? `Novo data set igual a ${like.name}` : "Novo data set",
-        prompt: "Nome completo do data set",
+        title: like ? `New data set like ${like.name}` : "New data set",
+        prompt: "Fully qualified data set name",
         value: prefix ? `${prefix}.` : "",
         ignoreFocusOut: true,
         validateInput: validateDsn,
@@ -323,11 +373,11 @@ export function registerBrowse(d: Deps): vscode.Disposable[] {
       } else {
         const t = await vscode.window.showQuickPick(
           [
-            { label: "PDSE (biblioteca)", description: "recomendado para JCL e programas", v: "PDSE" },
-            { label: "PDS", description: "biblioteca clássica", v: "PDS" },
-            { label: "Sequencial (PS)", description: "um único ficheiro", v: "PS" },
+            { label: "PDSE (library)", description: "recommended for JCL and programs", v: "PDSE" },
+            { label: "PDS", description: "classic library", v: "PDS" },
+            { label: "Sequential (PS)", description: "a single file", v: "PS" },
           ],
-          { title: `Tipo de ${dsn}` }
+          { title: `Type of ${dsn}` }
         );
         if (!t) {
           return;
@@ -358,11 +408,11 @@ export function registerBrowse(d: Deps): vscode.Disposable[] {
       }
       const sp = await vscode.window.showQuickPick(
         [
-          { label: "Pequeno", description: "15 tracks + 15", v: ["TRACKS", 15, 15, 20] },
-          { label: "Médio", description: "5 cilindros + 5", v: ["CYLINDERS", 5, 5, 50] },
-          { label: "Grande", description: "50 cilindros + 25", v: ["CYLINDERS", 50, 25, 100] },
+          { label: "Small", description: "15 tracks + 15", v: ["TRACKS", 15, 15, 20] },
+          { label: "Medium", description: "5 cylinders + 5", v: ["CYLINDERS", 5, 5, 50] },
+          { label: "Large", description: "50 cylinders + 25", v: ["CYLINDERS", 50, 25, 100] },
         ],
-        { title: "Espaço" }
+        { title: "Space" }
       );
       if (!sp) {
         return;
@@ -379,14 +429,14 @@ export function registerBrowse(d: Deps): vscode.Disposable[] {
       };
       await session.allocate(dsn, opts);
       datasets.refresh();
-      const kind = dsorg === "PS" ? "sequencial" : pdse ? "PDSE" : "PDS";
+      const kind = dsorg === "PS" ? "sequential" : pdse ? "PDSE" : "PDS";
       const a = await vscode.window.showInformationMessage(
-        `${dsn} criado (${kind}, ${recfm}/${lrecl}).`,
-        ...(dsorg === "PO" ? ["Novo membro"] : ["Abrir"])
+        `${dsn} created (${kind}, ${recfm}/${lrecl}).`,
+        ...(dsorg === "PO" ? ["New member"] : ["Open"])
       );
-      if (a === "Novo membro") {
+      if (a === "New member") {
         await vscode.commands.executeCommand("mainframeFtps.newMember", { kind: "ds", info: fakeDs(dsn, "PO") });
-      } else if (a === "Abrir") {
+      } else if (a === "Open") {
         await openRemote(dsn);
       }
     }),
@@ -399,8 +449,8 @@ export function registerBrowse(d: Deps): vscode.Disposable[] {
       const from = targetOf(node);
       const isMember = node.kind === "member";
       const v = await vscode.window.showInputBox({
-        title: `Renomear ${from}`,
-        prompt: isMember ? "Novo nome do membro" : "Novo nome do data set",
+        title: `Rename ${from}`,
+        prompt: isMember ? "New member name" : "New data set name",
         value: isMember ? memberOf(from) : from,
         ignoreFocusOut: true,
         validateInput: isMember ? validateMember : validateDsn,
@@ -420,16 +470,16 @@ export function registerBrowse(d: Deps): vscode.Disposable[] {
     cmd("mainframeFtps.deleteItem", async (node: MfNode) => {
       const t = targetOf(node);
       const ok = await vscode.window.showWarningMessage(
-        `Apagar ${t} do mainframe?`,
-        { modal: true, detail: "Esta operação não pode ser desfeita." },
-        "Apagar"
+        `Delete ${t} from the mainframe?`,
+        { modal: true, detail: "This cannot be undone." },
+        "Delete"
       );
       if (!ok) {
         return;
       }
       await session.remove(t);
       datasets.refresh();
-      vscode.window.setStatusBarMessage(`$(trash) ${t} apagado`, 4000);
+      vscode.window.setStatusBarMessage(`$(trash) ${t} deleted`, 4000);
     }),
 
     cmd("mainframeFtps.submitMember", async (node: MfNode) => {
@@ -438,7 +488,7 @@ export function registerBrowse(d: Deps): vscode.Disposable[] {
       const text = decode(buf, getConfig().transferEncoding);
       const jobName = /^\/\/(\S+)\s+JOB\b/m.exec(text)?.[1]?.toUpperCase() ?? "";
       if (!jobName) {
-        const go = await vscode.window.showWarningMessage(`${t} não parece ter um cartão JOB. Submeter mesmo assim?`, "Submeter");
+        const go = await vscode.window.showWarningMessage(`${t} does not seem to have a JOB card. Submit anyway?`, "Submit");
         if (!go) {
           return;
         }
@@ -446,10 +496,20 @@ export function registerBrowse(d: Deps): vscode.Disposable[] {
       await d.submit(buf, jobName, t);
     }),
 
+    cmd("mainframeFtps.chooseLocalFolder", async () => {
+      await chooseLocalFolder();
+    }),
+
+    cmd("mainframeFtps.openLocalFolder", async () => {
+      const base = localBase(d.context);
+      await vscode.workspace.fs.createDirectory(base);
+      await vscode.env.openExternal(base);
+    }),
+
     cmd("mainframeFtps.copyName", async (node: MfNode) => {
       const t = targetOf(node);
       await vscode.env.clipboard.writeText(t);
-      vscode.window.setStatusBarMessage(`$(copy) ${t} copiado`, 3000);
+      vscode.window.setStatusBarMessage(`$(copy) ${t} copied`, 3000);
     }),
   ];
 }

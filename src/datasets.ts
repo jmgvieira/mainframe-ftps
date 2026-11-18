@@ -179,10 +179,10 @@ export class DatasetsProvider implements vscode.TreeDataProvider<MfNode>, vscode
         );
         it.id = `d:${d.name}`;
         if (d.migrated) {
-          it.description = "migrado";
+          it.description = "migrated";
           it.iconPath = new vscode.ThemeIcon("cloud");
           it.contextValue = "mfDsMigrated";
-          it.command = { command: "mainframeFtps.openDataset", title: "Abrir", arguments: [node] };
+          it.command = { command: "mainframeFtps.openDataset", title: "Open", arguments: [node] };
         } else if (isPds) {
           it.description = `${d.dsorg} ${d.recfm} ${d.lrecl || ""}`.trim();
           it.iconPath = new vscode.ThemeIcon("library");
@@ -191,7 +191,7 @@ export class DatasetsProvider implements vscode.TreeDataProvider<MfNode>, vscode
           it.description = `${d.dsorg} ${d.recfm} ${d.lrecl || ""}`.trim();
           it.iconPath = new vscode.ThemeIcon("file-text");
           it.contextValue = "mfDsPS";
-          it.command = { command: "mainframeFtps.openDataset", title: "Abrir", arguments: [node] };
+          it.command = { command: "mainframeFtps.openDataset", title: "Open", arguments: [node] };
         } else {
           it.description = d.dsorg === "VS" ? "VSAM" : d.dsorg;
           it.iconPath = new vscode.ThemeIcon(d.dsorg === "VS" ? "database" : "question");
@@ -200,9 +200,9 @@ export class DatasetsProvider implements vscode.TreeDataProvider<MfNode>, vscode
         it.tooltip = new vscode.MarkdownString(
           `**${d.name}**\n\n` +
             (d.migrated
-              ? "Migrado (HSM). Ao abrir é feito o recall, o que pode demorar."
+              ? "Migrated (HSM). Opening it starts a recall, which may take a while."
               : `DSORG ${d.dsorg} · RECFM ${d.recfm || "?"} · LRECL ${d.lrecl || "?"} · BLKSIZE ${d.blksize || "?"}\n\n` +
-                `Volume ${d.volume || "?"} · último acesso ${d.referred || "?"}`)
+                `Volume ${d.volume || "?"} · last referenced ${d.referred || "?"}`)
         );
         return it;
       }
@@ -212,9 +212,9 @@ export class DatasetsProvider implements vscode.TreeDataProvider<MfNode>, vscode
         it.id = `m:${m.pds}(${m.name})`;
         it.iconPath = new vscode.ThemeIcon("file-code");
         it.description = m.changed ? `${m.changed}${m.id ? " · " + m.id : ""}` : undefined;
-        it.tooltip = `${m.pds}(${m.name})${m.changed ? `\nAlterado: ${m.changed} por ${m.id}\nLinhas: ${m.size}` : ""}`;
+        it.tooltip = `${m.pds}(${m.name})${m.changed ? `\nChanged: ${m.changed} by ${m.id}\nLines: ${m.size}` : ""}`;
         it.contextValue = "mfMember";
-        it.command = { command: "mainframeFtps.openDataset", title: "Abrir", arguments: [node] };
+        it.command = { command: "mainframeFtps.openDataset", title: "Open", arguments: [node] };
         return it;
       }
       case "message": {
@@ -234,7 +234,7 @@ export class DatasetsProvider implements vscode.TreeDataProvider<MfNode>, vscode
       return this.filters().map((pattern) => ({ kind: "filter", pattern }));
     }
     if (!this.session.isConnected) {
-      return [{ kind: "message", text: "Desligado – clique no ícone de ligar" }];
+      return [{ kind: "message", text: "Disconnected – click the connect icon" }];
     }
     try {
       if (node.kind === "filter") {
@@ -244,7 +244,7 @@ export class DatasetsProvider implements vscode.TreeDataProvider<MfNode>, vscode
           list = parseDatasetList(raw, cwd);
           this.dsCache.set(node.pattern, list);
         }
-        return list.length ? list.map((info) => ({ kind: "ds", info })) : [{ kind: "message", text: "Nenhum data set" }];
+        return list.length ? list.map((info) => ({ kind: "ds", info })) : [{ kind: "message", text: "No data sets" }];
       }
       if (node.kind === "ds") {
         let list = this.memberCache.get(node.info.name);
@@ -252,7 +252,7 @@ export class DatasetsProvider implements vscode.TreeDataProvider<MfNode>, vscode
           list = parseMemberList(await this.session.listMembersRaw(node.info.name), node.info.name);
           this.memberCache.set(node.info.name, list);
         }
-        return list.length ? list.map((info) => ({ kind: "member", info })) : [{ kind: "message", text: "PDS vazio" }];
+        return list.length ? list.map((info) => ({ kind: "member", info })) : [{ kind: "message", text: "Empty PDS" }];
       }
     } catch (err) {
       if (err instanceof CancelledError) {

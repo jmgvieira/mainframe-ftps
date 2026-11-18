@@ -3,7 +3,7 @@ import * as path from "path";
 import { FtpSession, CancelledError, errText } from "./session";
 import { TargetMap, IGNORE, validateDsn, validateMember, suggestMember, pdsOf, memberOf } from "./mapping";
 import { JobsProvider, JobInfo, parseJobList, parseJobLine, severity } from "./jobs";
-import { getConfig, initServers, servers } from "./config";
+import { getConfig, initServers, servers, migrateLegacyHost } from "./config";
 import { DatasetsProvider } from "./datasets";
 import { registerBrowse } from "./browse";
 import { encode, decode, unsupported } from "./codec";
@@ -20,8 +20,9 @@ const SPOOL_SCHEME = "mfspool";
 
 export function activate(context: vscode.ExtensionContext) {
   log = vscode.window.createOutputChannel("Mainframe FTPS");
-  log.appendLine(`Mainframe FTPS ${context.extension.packageJSON.version} ativa (VS Code ${vscode.version}).`);
+  log.appendLine(`Mainframe FTPS ${context.extension.packageJSON.version} active (VS Code ${vscode.version}).`);
   initServers(context);
+  void migrateLegacyHost((m) => log.appendLine(m));
   session = new FtpSession(context, log);
   targets = new TargetMap(context);
   jobs = new JobsProvider(context, session, log);
@@ -34,8 +35,8 @@ export function activate(context: vscode.ExtensionContext) {
     const { jobId } = await session.submit(data);
     const job = await jobs.add(jobId, jobName, source);
     tree.reveal(job, { select: true, focus: false }).then(undefined, () => undefined);
-    vscode.window.setStatusBarMessage(`$(rocket) ${jobName} ${jobId} submetido`, 5000);
-    log.appendLine(`Job ${jobName} ${jobId} submetido a partir de ${source}`);
+    vscode.window.setStatusBarMessage(`$(rocket) ${jobName} ${jobId} submitted`, 5000);
+    log.appendLine(`Job ${jobName} ${jobId} submitted from ${source}`);
   };
 
   // Spool como documento só de leitura: mfspool:/JOB12345/NOME.spool (um separador por job)
@@ -56,8 +57,8 @@ export function activate(context: vscode.ExtensionContext) {
           cfg.spoolStripAsa
         );
       } catch (err) {
-        return `Não foi possível obter o spool de ${jobId}:\n${errText(err)}\n\n` +
-          "O job pode já ter sido apagado do JES (purge). Use \"Atualizar estado\" na vista Jobs para confirmar.";
+        return `Could not get the spool of ${jobId}:\n${errText(err)}\n\n` +
+          "The job may already have been purged from JES. Use \"Refresh job status\" in the Jobs view to check.";
       }
     },
   };
@@ -100,8 +101,8 @@ export function activate(context: vscode.ExtensionContext) {
 
     vscode.workspace.onDidSaveTextDocument((doc) =>
       onSave(doc).catch((err) => {
-        log.appendLine(`Erro ao tratar a gravação de ${doc.uri.toString()}: ${errText(err)}`);
-        vscode.window.showErrorMessage(`Mainframe FTPS: erro ao gravar no mainframe: ${errText(err)}`, "Ver log").then(
+        log.appendLine(`Error while saving ${doc.uri.toString()} to the mainframe: ${errText(err)}`);
+        vscode.window.showErrorMessage(`Mainframe FTPS: error saving to the mainframe: ${errText(err)}`, "Show log").then(
           (a) => a && log.show()
         );
       })
@@ -109,13 +110,13 @@ export function activate(context: vscode.ExtensionContext) {
 
     cmd("mainframeFtps.connect", async () => {
       await session.ensureConnected();
-      vscode.window.setStatusBarMessage("$(plug) Ligado ao mainframe", 3000);
+      vscode.window.setStatusBarMessage("$(plug) Connected to the mainframe", 3000);
     }),
     cmd("mainframeFtps.disconnect", async () => session.disconnect()),
     cmd("mainframeFtps.selectServer", selectServer),
     cmd("mainframeFtps.forgetPin", async () => {
       await session.forgetPin();
-      vscode.window.showInformationMessage("PIN esquecido.");
+      vscode.window.showInformationMessage("Stored PIN forgotten.");
     }),
     cmd("mainframeFtps.upload", async (uri?: vscode.Uri) => {
       const doc = await docFor(uri);
@@ -128,20 +129,20 @@ export function activate(context: vscode.ExtensionContext) {
     cmd("mainframeFtps.setTarget", async (uri?: vscode.Uri) => {
       const doc = await docFor(uri);
       const target = await askTarget(doc.uri);
-      vscode.window.showInformationMessage(`Destino de ${path.basename(doc.fileName)}: ${target}`);
+      vscode.window.showInformationMessage(`Destination of ${path.basename(doc.fileName)}: ${target}`);
     }),
     cmd("mainframeFtps.clearTarget", async (uri?: vscode.Uri) => {
       const doc = await docFor(uri);
       await targets.set(doc.uri, undefined);
-      vscode.window.showInformationMessage(`Destino removido de ${path.basename(doc.fileName)}.`);
+      vscode.window.showInformationMessage(`Destination removed from ${path.basename(doc.fileName)}.`);
     }),
     cmd("mainframeFtps.submit", async (uri?: vscode.Uri) => {
       const doc = await docFor(uri);
       if (doc.isDirty) {
         await doc.save(); // dispara também a gravação no mainframe
       }
-      await checkServer(doc, "submeter");
-      const data = await prepareText(doc, "submeter");
+      await checkServer(doc, "submit");
+      const data = await prepareText(doc, "submit");
       const jobName = /^\/\/(\S+)\s+JOB\b/m.exec(doc.getText())?.[1]?.toUpperCase() ?? "";
       await submitJcl(data, jobName, path.basename(doc.fileName));
     }),
@@ -155,7 +156,7 @@ export function activate(context: vscode.ExtensionContext) {
       const msg = `${job.jobName} ${job.jobId}: ${job.status} ${job.result}`.trim();
       const show = sev === "error" ? vscode.window.showErrorMessage
         : sev === "warn" ? vscode.window.showWarningMessage : vscode.window.showInformationMessage;
-      const action = await show(msg, ...(job.status === "OUTPUT" ? ["Ver spool"] : []));
+      const action = await show(msg, ...(job.status === "OUTPUT" ? ["View spool"] : []));
       if (action) {
         await openSpool(job);
       }
@@ -179,7 +180,7 @@ export function activate(context: vscode.ExtensionContext) {
         return;
       }
       const ok = await vscode.window.showWarningMessage(
-        `Apagar ${job.jobName} ${job.jobId} do JES (purge do spool)?`, { modal: true }, "Apagar"
+        `Delete ${job.jobName} ${job.jobId} from JES (purge the spool)?`, { modal: true }, "Purge"
       );
       if (ok) {
         await session.deleteJob(job.jobId);
@@ -188,8 +189,8 @@ export function activate(context: vscode.ExtensionContext) {
     }),
     cmd("mainframeFtps.listJobs", async () => {
       const filter = await vscode.window.showInputBox({
-        title: "Listar jobs no JES",
-        prompt: "Filtro do nome do job (ex.: USER*, * para todos os seus)",
+        title: "List jobs in JES",
+        prompt: "Job name filter (e.g. USER*, * for all of yours)",
         value: "*",
         ignoreFocusOut: true,
       });
@@ -199,7 +200,7 @@ export function activate(context: vscode.ExtensionContext) {
       const raw = await session.jesList("", filter.toUpperCase() || "*");
       const list = parseJobList(raw);
       if (!list.length) {
-        vscode.window.showInformationMessage("Nenhum job encontrado.");
+        vscode.window.showInformationMessage("No jobs found.");
         return;
       }
       const pick = await vscode.window.showQuickPick(
@@ -208,7 +209,7 @@ export function activate(context: vscode.ExtensionContext) {
           description: `${j.status} ${j.result ?? ""}`,
           job: j,
         })),
-        { title: "Jobs no JES", placeHolder: "Escolha um job para ver o spool" }
+        { title: "Jobs in JES", placeHolder: "Choose a job to view its spool" }
       );
       if (pick) {
         const job: JobInfo = {
@@ -238,22 +239,22 @@ async function selectServer(): Promise<void> {
   const current = session.server;
   const items: Item[] = list.map((s) => ({
     label: `${s.name === current ? "$(check)" : "$(server)"} ${s.name}`,
-    description: s.name === s.host ? `porta ${s.port}` : `${s.host}:${s.port}`,
-    detail: s.name === current ? (session.isConnected ? "Ligado" : "Próximo a ligar") : undefined,
+    description: s.name === s.host ? `port ${s.port}` : `${s.host}:${s.port}`,
+    detail: s.name === current ? (session.isConnected ? "Connected" : "Next to connect") : undefined,
     server: s.name,
   }));
   items.push({ label: "", kind: vscode.QuickPickItemKind.Separator });
   if (session.isConnected) {
-    items.push({ label: "$(debug-disconnect) Desligar", action: "disconnect" });
+    items.push({ label: "$(debug-disconnect) Disconnect", action: "disconnect" });
   }
   items.push({
-    label: "$(gear) Editar lista de servidores…",
+    label: "$(gear) Edit server list…",
     description: "mainframeFtps.hosts",
     action: "settings",
   });
   const pick = await vscode.window.showQuickPick(items, {
-    title: "Servidor mainframe",
-    placeHolder: list.length ? "Escolha o servidor (fecha a sessão atual e pede PIN + token)" : "Ainda não há servidores",
+    title: "Mainframe server",
+    placeHolder: list.length ? "Choose the server (closes the current session and asks for PIN + token)" : "No servers yet",
   });
   if (!pick) {
     return;
@@ -268,7 +269,7 @@ async function selectServer(): Promise<void> {
   }
   if (pick.server) {
     await session.switchServer(pick.server);
-    vscode.window.setStatusBarMessage(`$(server) Ligado a ${pick.server}`, 4000);
+    vscode.window.setStatusBarMessage(`$(server) Connected to ${pick.server}`, 4000);
   }
 }
 
@@ -283,11 +284,11 @@ async function checkServer(doc: vscode.TextDocument, action: string): Promise<bo
   if (!from || !now || from === now || !servers().some((s) => s.name === from)) {
     return false;
   }
-  const here = `${capitalize(action)} em ${now}`;
-  const there = `Mudar para ${from} e ${action}`;
+  const here = `${capitalize(action)} on ${now}`;
+  const there = `Switch to ${from} and ${action}`;
   const a = await vscode.window.showWarningMessage(
-    `${path.basename(doc.fileName)} veio de ${from}, mas está a usar ${now}.`,
-    { modal: true, detail: `Escolha onde ${action}.` },
+    `${path.basename(doc.fileName)} came from ${from}, but you are using ${now}.`,
+    { modal: true, detail: `Choose where to ${action}.` },
     there,
     here
   );
@@ -296,7 +297,7 @@ async function checkServer(doc: vscode.TextDocument, action: string): Promise<bo
     return false;
   }
   if (a === here) {
-    return action === "gravar";
+    return action === "save";
   }
   throw new CancelledError();
 }
@@ -307,17 +308,17 @@ async function onSave(doc: vscode.TextDocument): Promise<void> {
   if (doc.uri.scheme === SPOOL_SCHEME || doc.uri.scheme === "untitled") {
     return;
   }
-  log.appendLine(`Guardado ${doc.uri.toString()}`);
+  log.appendLine(`Saved ${doc.uri.toString()}`);
   const cfg = getConfig();
   const name = path.basename(doc.fileName);
   if (!cfg.autoUploadOnSave) {
-    log.appendLine(`Guardado ${name}: não enviado (autoUploadOnSave desligado).`);
+    log.appendLine(`Saved ${name}: not sent (autoUploadOnSave is off).`);
     return;
   }
   const ext = path.extname(doc.fileName).toLowerCase();
   let target = await targets.get(doc.uri);
   if (target === IGNORE) {
-    log.appendLine(`Guardado ${name}: não enviado (marcado "Nunca para este ficheiro").`);
+    log.appendLine(`Saved ${name}: not sent (marked "Never for this file").`);
     return;
   }
   if (target && (await targets.stored(doc.uri)) === undefined) {
@@ -327,17 +328,17 @@ async function onSave(doc: vscode.TextDocument): Promise<void> {
   if (!target) {
     if (!cfg.fileExtensions.includes(ext)) {
       log.appendLine(
-        `Guardado ${doc.fileName}: sem destino no mainframe e a extensão ${ext || "(nenhuma)"} não está em ` +
-          "fileExtensions. Use \"Gravar ficheiro no mainframe\" para escolher o destino."
+        `Saved ${doc.fileName}: no mainframe destination and the extension ${ext || "(none)"} is not in ` +
+          "fileExtensions. Use \"Save file to mainframe\" to choose the destination."
       );
       return;
     }
     const choice = await vscode.window.showInformationMessage(
-      `Gravar ${path.basename(doc.fileName)} também no mainframe?`,
-      "Escolher destino (PDS)…",
-      "Nunca para este ficheiro"
+      `Also save ${path.basename(doc.fileName)} to the mainframe?`,
+      "Choose destination (PDS)…",
+      "Never for this file"
     );
-    if (choice === "Nunca para este ficheiro") {
+    if (choice === "Never for this file") {
       await targets.set(doc.uri, IGNORE);
       return;
     }
@@ -357,30 +358,30 @@ async function onSave(doc: vscode.TextDocument): Promise<void> {
     await upload(doc, target);
   } catch (err) {
     if (err instanceof CancelledError) {
-      vscode.window.setStatusBarMessage("Mainframe: gravação cancelada", 4000);
+      vscode.window.setStatusBarMessage("Mainframe: save cancelled", 4000);
       return;
     }
-    log.appendLine(`Erro a gravar ${target}: ${errText(err)}`);
-    const a = await vscode.window.showErrorMessage(`Erro a gravar ${target}: ${errText(err)}`, "Tentar de novo", "Ver log");
-    if (a === "Tentar de novo") {
+    log.appendLine(`Error saving ${target}: ${errText(err)}`);
+    const a = await vscode.window.showErrorMessage(`Error saving ${target}: ${errText(err)}`, "Try again", "Show log");
+    if (a === "Try again") {
       await onSave(doc);
-    } else if (a === "Ver log") {
+    } else if (a === "Show log") {
       log.show();
     }
   }
 }
 
 async function upload(doc: vscode.TextDocument, target: string): Promise<void> {
-  if (await checkServer(doc, "gravar")) {
+  if (await checkServer(doc, "save")) {
     await targets.set(doc.uri, target); // passa a pertencer ao servidor atual
   }
-  const data = await prepareText(doc, "gravar");
-  log.appendLine(`A gravar ${path.basename(doc.fileName)} em ${target} (${data.length} bytes)`);
+  const data = await prepareText(doc, "save");
+  log.appendLine(`Saving ${path.basename(doc.fileName)} to ${target} (${data.length} bytes)`);
   await vscode.window.withProgress(
-    { location: vscode.ProgressLocation.Window, title: `A gravar ${target}…` },
+    { location: vscode.ProgressLocation.Window, title: `Saving ${target}…` },
     () => session.uploadText(target, data)
   );
-  vscode.window.setStatusBarMessage(`$(cloud-upload) Gravado em ${target}`, 4000);
+  vscode.window.setStatusBarMessage(`$(cloud-upload) Saved to ${target}`, 4000);
   if (memberOf(target)) {
     datasets.refreshPds(pdsOf(target));
   }
@@ -394,12 +395,12 @@ async function prepareText(doc: vscode.TextDocument, action: string): Promise<Bu
 
   const long = lines.map((l, i) => ({ n: i + 1, len: l.length })).filter((x) => x.len > cfg.recordLength);
   if (long.length) {
-    const sample = long.slice(0, 5).map((x) => `linha ${x.n} (${x.len})`).join(", ");
+    const sample = long.slice(0, 5).map((x) => `line ${x.n} (${x.len})`).join(", ");
     const ok = await vscode.window.showWarningMessage(
-      `${long.length} linha(s) com mais de ${cfg.recordLength} colunas: ${sample}. ` +
-        "No mainframe podem ser truncadas ou partidas.",
+      `${long.length} line(s) longer than ${cfg.recordLength} columns: ${sample}. ` +
+        "On the mainframe they may be truncated or split.",
       { modal: true },
-      `${capitalize(action)} mesmo assim`
+      `${capitalize(action)} anyway`
     );
     if (!ok) {
       throw new CancelledError();
@@ -410,9 +411,9 @@ async function prepareText(doc: vscode.TextDocument, action: string): Promise<Bu
   const bad = unsupported(text, cfg.transferEncoding);
   if (bad.length) {
     const ok = await vscode.window.showWarningMessage(
-      `O ficheiro tem caracteres que não existem no código de página do mainframe (${cfg.hostCodePage || cfg.transferEncoding}): ${bad.join(" ")}. Serão enviados como "?".`,
+      `The file has characters that do not exist in the mainframe code page (${cfg.hostCodePage || cfg.transferEncoding}): ${bad.join(" ")}. They will be sent as "?".`,
       { modal: true },
-      `${capitalize(action)} mesmo assim`
+      `${capitalize(action)} anyway`
     );
     if (!ok) {
       throw new CancelledError();
@@ -425,8 +426,8 @@ async function askTarget(uri: vscode.Uri): Promise<string> {
   const current = await targets.get(uri);
   const lastPds = current && current !== IGNORE ? pdsOf(current) : await targets.lastPds(uri);
   const pds = await vscode.window.showInputBox({
-    title: `Destino no mainframe – ${path.basename(uri.fsPath)} (1/2)`,
-    prompt: "Biblioteca (PDS), ex.: USER.JCL.LIB",
+    title: `Mainframe destination – ${path.basename(uri.fsPath)} (1/2)`,
+    prompt: "Library (PDS), e.g. USER.JCL.LIB",
     value: lastPds,
     ignoreFocusOut: true,
     validateInput: validateDsn,
@@ -436,8 +437,8 @@ async function askTarget(uri: vscode.Uri): Promise<string> {
   }
   const currentMember = current && current !== IGNORE ? memberOf(current) : "";
   const member = await vscode.window.showInputBox({
-    title: `Destino no mainframe – ${path.basename(uri.fsPath)} (2/2)`,
-    prompt: `Membro em ${pds.toUpperCase()}`,
+    title: `Mainframe destination – ${path.basename(uri.fsPath)} (2/2)`,
+    prompt: `Member in ${pds.toUpperCase()}`,
     value: currentMember || suggestMember(uri.fsPath),
     ignoreFocusOut: true,
     validateInput: validateMember,
@@ -455,8 +456,8 @@ async function askTarget(uri: vscode.Uri): Promise<string> {
 async function openMember(_context: vscode.ExtensionContext): Promise<void> {
   const active = vscode.window.activeTextEditor?.document.uri;
   const pds = await vscode.window.showInputBox({
-    title: "Abrir membro do mainframe",
-    prompt: "Biblioteca (PDS)",
+    title: "Open mainframe member",
+    prompt: "Library (PDS)",
     value: active ? await targets.lastPds(active) : "",
     ignoreFocusOut: true,
     validateInput: validateDsn,
@@ -467,15 +468,15 @@ async function openMember(_context: vscode.ExtensionContext): Promise<void> {
   const dsn = pds.trim().toUpperCase().replace(/^'|'$/g, "");
   const members = await session.listMembers(dsn);
   const member = await vscode.window.showQuickPick(members, {
-    title: `${dsn} – ${members.length} membros`,
-    placeHolder: "Escolha o membro",
+    title: `${dsn} – ${members.length} members`,
+    placeHolder: "Choose the member",
   });
   if (!member) {
     return;
   }
   const target = `${dsn}(${member})`;
   const ext = await vscode.window.showQuickPick([".jcl", ".ezt", ".cbl", ".cpy", ".txt"], {
-    title: "Extensão do ficheiro local",
+    title: "Local file extension",
   });
   if (!ext) {
     return;
@@ -483,7 +484,7 @@ async function openMember(_context: vscode.ExtensionContext): Promise<void> {
   const root = vscode.workspace.workspaceFolders?.[0]?.uri;
   const dest = await vscode.window.showSaveDialog({
     defaultUri: root ? vscode.Uri.joinPath(root, member + ext) : undefined,
-    title: `Guardar ${target} como…`,
+    title: `Save ${target} as…`,
   });
   if (!dest) {
     return;
@@ -493,7 +494,7 @@ async function openMember(_context: vscode.ExtensionContext): Promise<void> {
   await vscode.workspace.fs.writeFile(dest, Buffer.from(text, "utf8"));
   await targets.set(dest, target);
   await vscode.window.showTextDocument(dest);
-  vscode.window.setStatusBarMessage(`$(cloud-download) ${target} aberto (associado a este ficheiro)`, 5000);
+  vscode.window.setStatusBarMessage(`$(cloud-download) ${target} opened (associated with this file)`, 5000);
 }
 
 // ------------------------------------------------------------------ jobs
@@ -525,7 +526,7 @@ async function openSpool(job: JobInfo, ddId?: string): Promise<void> {
     });
     spoolChanged.fire(uri);
     await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Window, title: `A ler o spool de ${job.jobId}…` },
+      { location: vscode.ProgressLocation.Window, title: `Reading the spool of ${job.jobId}…` },
       () => updated
     );
     doc = existing;
@@ -554,8 +555,8 @@ async function pickJob(): Promise<JobInfo | undefined> {
     detail: j.source,
     job: j,
   }));
-  items.push({ label: "$(search) Outro JOBID…" });
-  const pick = await vscode.window.showQuickPick(items, { title: "Escolha o job" });
+  items.push({ label: "$(search) Other JOBID…" });
+  const pick = await vscode.window.showQuickPick(items, { title: "Choose the job" });
   if (!pick) {
     return undefined;
   }
@@ -563,8 +564,8 @@ async function pickJob(): Promise<JobInfo | undefined> {
     return pick.job;
   }
   const id = await vscode.window.showInputBox({
-    prompt: "JOBID (ex.: JOB12345)",
-    validateInput: (v) => (/^(J(OB)?|T(SU)?|S(TC)?)\d{5,7}$/i.test(v.trim()) ? undefined : "JOBID inválido"),
+    prompt: "JOBID (e.g. JOB12345)",
+    validateInput: (v) => (/^(J(OB)?|T(SU)?|S(TC)?)\d{5,7}$/i.test(v.trim()) ? undefined : "Invalid JOBID"),
   });
   if (!id) {
     return undefined;
@@ -584,8 +585,8 @@ function cmd(id: string, fn: (...args: any[]) => Promise<unknown>): vscode.Dispo
       if (err instanceof CancelledError) {
         return;
       }
-      log.appendLine(`Erro em ${id}: ${errText(err)}`);
-      const a = await vscode.window.showErrorMessage(`Mainframe FTPS: ${errText(err)}`, "Ver log");
+      log.appendLine(`Error in ${id}: ${errText(err)}`);
+      const a = await vscode.window.showErrorMessage(`Mainframe FTPS: ${errText(err)}`, "Show log");
       if (a) {
         log.show();
       }
@@ -599,7 +600,7 @@ async function docFor(uri?: vscode.Uri): Promise<vscode.TextDocument> {
   }
   const doc = vscode.window.activeTextEditor?.document;
   if (!doc) {
-    throw new Error("Abra primeiro um ficheiro no editor.");
+    throw new Error("Open a file in the editor first.");
   }
   return doc;
 }

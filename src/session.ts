@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { Client, FTPError } from "basic-ftp";
 import { Readable, Writable } from "stream";
 import { getConfig, activeServer, servers, setActiveServer } from "./config";
+import { localBase } from "./mapping";
 import { zosName } from "./codec";
 
 /**
@@ -37,6 +38,9 @@ export class FtpSession implements vscode.Disposable {
     this.statusItem.show();
     context.subscriptions.push(
       vscode.workspace.onDidChangeConfiguration((e) => {
+        if (e.affectsConfiguration("mainframeFtps.localFolder")) {
+          this.updateStatus();
+        }
         if (e.affectsConfiguration("mainframeFtps.hosts") || e.affectsConfiguration("mainframeFtps.host")) {
           this.updateStatus();
           this._onDidChangeState.fire(this.isConnected);
@@ -56,7 +60,7 @@ export class FtpSession implements vscode.Disposable {
       return;
     }
     if (this.client) {
-      this.log.appendLine(`[${ts()}] A mudar de ${this.serverName} para ${name}.`);
+      this.log.appendLine(`[${ts()}] Switching from ${this.serverName} to ${name}.`);
     }
     // espera que acabe o que estiver na fila antes de fechar
     await this.queue;
@@ -96,8 +100,8 @@ export class FtpSession implements vscode.Disposable {
     const cfg = getConfig();
     if (!cfg.host) {
       const action = await vscode.window.showErrorMessage(
-        "Mainframe FTPS: falta configurar os servidores (mainframeFtps.hosts).",
-        "Abrir definições"
+        "Mainframe FTPS: no servers configured (mainframeFtps.hosts).",
+        "Open settings"
       );
       if (action) {
         vscode.commands.executeCommand("workbench.action.openSettings", "mainframeFtps.hosts");
@@ -116,7 +120,7 @@ export class FtpSession implements vscode.Disposable {
 
     try {
       this.log.appendLine(
-        `[${ts()}] A ligar a ${serverName} (${cfg.host}:${cfg.port}, TLS ${cfg.tlsMode}) como ${user}`
+        `[${ts()}] Connecting to ${serverName} (${cfg.host}:${cfg.port}, TLS ${cfg.tlsMode}) as ${user}`
       );
       await client.access({
         host: cfg.host,
@@ -142,15 +146,15 @@ export class FtpSession implements vscode.Disposable {
       this.lastKeepAlive = Date.now();
       this.lastActivity = Date.now();
       this.startKeepAlive();
-      this.log.appendLine(`[${ts()}] Ligado.`);
+      this.log.appendLine(`[${ts()}] Connected.`);
       this._onDidChangeState.fire(true);
     } catch (err) {
       client.close();
-      this.log.appendLine(`[${ts()}] Falha na ligação: ${errText(err)}`);
+      this.log.appendLine(`[${ts()}] Connection failed: ${errText(err)}`);
       // PIN errado guardado? apaga para voltar a pedir.
       if (err instanceof FTPError && err.code === 530) {
         await this.context.secrets.delete(PIN_KEY);
-        throw new Error("Login recusado (530). Verifique o PIN/token. Atenção: várias tentativas falhadas podem revogar o utilizador.");
+        throw new Error("Login rejected (530). Check the PIN/token. Warning: several failed attempts may revoke the user ID.");
       }
       throw err;
     } finally {
@@ -165,10 +169,10 @@ export class FtpSession implements vscode.Disposable {
     const remembered = this.context.globalState.get<string>("mainframeFtps.lastUser", "");
     const user = await vscode.window.showInputBox({
       title: "Mainframe FTPS",
-      prompt: "Utilizador TSO",
+      prompt: "TSO user ID",
       value: remembered,
       ignoreFocusOut: true,
-      validateInput: (v) => (/^[A-Za-z#@$][A-Za-z0-9#@$]{0,7}$/.test(v) ? undefined : "Utilizador inválido"),
+      validateInput: (v) => (/^[A-Za-z#@$][A-Za-z0-9#@$]{0,7}$/.test(v) ? undefined : "Invalid user ID"),
     });
     if (!user) {
       throw new CancelledError();
@@ -189,10 +193,10 @@ export class FtpSession implements vscode.Disposable {
     if (saved) {
       const token = await vscode.window.showInputBox({
         title: `Mainframe FTPS – ${user}@${host}`,
-        prompt: "Token (PIN fixo já guardado)",
+        prompt: "Token (fixed PIN already stored)",
         password: true,
         ignoreFocusOut: true,
-        validateInput: (v) => (/^\d{4,8}$/.test(v) ? undefined : "Indique os dígitos do token"),
+        validateInput: (v) => (/^\d{4,8}$/.test(v) ? undefined : "Enter the token digits"),
       });
       if (!token) {
         throw new CancelledError();
@@ -201,10 +205,10 @@ export class FtpSession implements vscode.Disposable {
     }
     const pwd = await vscode.window.showInputBox({
       title: `Mainframe FTPS – ${user}@${host}`,
-      prompt: tokenFirst ? "Token + PIN fixo, seguidos" : "PIN fixo + token, seguidos",
+      prompt: tokenFirst ? "Token + fixed PIN, typed together" : "Fixed PIN + token, typed together",
       password: true,
       ignoreFocusOut: true,
-      validateInput: (v) => (v.length >= 5 ? undefined : "Escreva o PIN fixo e o token seguidos"),
+      validateInput: (v) => (v.length >= 5 ? undefined : "Type the fixed PIN and the token together"),
     });
     if (!pwd) {
       throw new CancelledError();
@@ -226,7 +230,7 @@ export class FtpSession implements vscode.Disposable {
 
   disconnect(): void {
     if (this.client) {
-      this.log.appendLine(`[${ts()}] Desligado.`);
+      this.log.appendLine(`[${ts()}] Disconnected.`);
     }
     this.closeClient();
     this._onDidChangeState.fire(false);
@@ -265,7 +269,7 @@ export class FtpSession implements vscode.Disposable {
     if (!this.isConnected) {
       if (this.client) {
         // o servidor fechou a ligação sem avisar
-        this.log.appendLine(`[${ts()}] A ligação foi fechada pelo servidor.`);
+        this.log.appendLine(`[${ts()}] The connection was closed by the server.`);
         this.disconnect();
       }
       return;
@@ -273,7 +277,7 @@ export class FtpSession implements vscode.Disposable {
     const cfg = getConfig();
     const idleMin = (Date.now() - this.lastActivity) / 60000;
     if (cfg.idleDisconnectMinutes > 0 && idleMin >= cfg.idleDisconnectMinutes) {
-      this.log.appendLine(`[${ts()}] Sem atividade há ${cfg.idleDisconnectMinutes} min: a desligar.`);
+      this.log.appendLine(`[${ts()}] No activity for ${cfg.idleDisconnectMinutes} min: disconnecting.`);
       this.disconnect();
       return;
     }
@@ -287,9 +291,9 @@ export class FtpSession implements vscode.Disposable {
         this.lastKeepAlive = Date.now();
         this.updateStatus();
       } catch (err) {
-        this.log.appendLine(`[${ts()}] Keepalive falhou: ${errText(err)}`);
+        this.log.appendLine(`[${ts()}] Keepalive failed: ${errText(err)}`);
         this.disconnect();
-        vscode.window.showWarningMessage("Mainframe FTPS: a ligação caiu. Será pedido novo token na próxima operação.");
+        vscode.window.showWarningMessage("Mainframe FTPS: the connection dropped. A new token will be asked for on the next operation.");
       }
     }).catch(() => undefined);
   }
@@ -316,11 +320,11 @@ export class FtpSession implements vscode.Disposable {
         if (!isConnectionError(err, this.client)) {
           throw err;
         }
-        this.log.appendLine(`[${ts()}] ${label}: ligação perdida (${errText(err)}).`);
+        this.log.appendLine(`[${ts()}] ${label}: connection lost (${errText(err)}).`);
         this.disconnect();
         const again = await vscode.window.showWarningMessage(
-          `A ligação ao mainframe caiu durante "${label}". Voltar a ligar e repetir?`,
-          "Voltar a ligar"
+          `The mainframe connection dropped during "${label}". Reconnect and retry?`,
+          "Reconnect"
         );
         if (!again) {
           throw new CancelledError();
@@ -342,17 +346,17 @@ export class FtpSession implements vscode.Disposable {
 
   /** Grava texto num data set / membro. target ex.: USER.JCL.LIB(MEUJOB) */
   async uploadText(target: string, data: Buffer): Promise<string> {
-    return this.run(`gravar ${target}`, async (c) => {
+    return this.run(`save ${target}`, async (c) => {
       await c.send("TYPE A");
       await this.sendLogged(c, "SITE FILETYPE=SEQ");
       const res = await c.uploadFrom(Readable.from([data]), quoteDsn(target));
-      this.log.appendLine(`[${ts()}] Gravado ${target}: ${oneLine(res.message)}`);
+      this.log.appendLine(`[${ts()}] Saved ${target}: ${oneLine(res.message)}`);
       return res.message;
     });
   }
 
   async downloadText(target: string): Promise<Buffer> {
-    return this.run(`ler ${target}`, async (c) => {
+    return this.run(`read ${target}`, async (c) => {
       await c.send("TYPE A");
       await this.sendLogged(c, "SITE FILETYPE=SEQ");
       const sink = new BufferSink();
@@ -366,7 +370,7 @@ export class FtpSession implements vscode.Disposable {
    * diretório de trabalho usado, para completar nomes relativos.
    */
   async listDatasetsRaw(pattern: string): Promise<{ raw: string; cwd: string }> {
-    return this.run(`listar ${pattern}`, async (c) => {
+    return this.run(`list ${pattern}`, async (c) => {
       await this.sendLogged(c, "SITE FILETYPE=SEQ");
       const p = pattern.trim().toUpperCase().replace(/^'+|'+$/g, "");
       const wild = p.search(/[*%]/);
@@ -392,7 +396,7 @@ export class FtpSession implements vscode.Disposable {
 
   /** Listagem dos membros de um PDS (com estatísticas ISPF quando existem). */
   async listMembersRaw(pds: string): Promise<string> {
-    return this.run(`listar ${pds}`, async (c) => {
+    return this.run(`list ${pds}`, async (c) => {
       await this.sendLogged(c, "SITE FILETYPE=SEQ");
       await c.cd(quoteDsn(pds));
       try {
@@ -419,7 +423,7 @@ export class FtpSession implements vscode.Disposable {
 
   /** Aloca um data set (PDS, PDSE ou sequencial). */
   async allocate(dsn: string, o: AllocOptions): Promise<void> {
-    await this.run(`alocar ${dsn}`, async (c) => {
+    await this.run(`allocate ${dsn}`, async (c) => {
       await this.sendLogged(c, "SITE FILETYPE=SEQ");
       const blk = o.recfm.startsWith("V") ? 27998 : Math.floor(27998 / o.lrecl) * o.lrecl;
       await this.sendLogged(c, `SITE RECFM=${o.recfm} LRECL=${o.lrecl} BLKSIZE=${blk}`);
@@ -433,13 +437,13 @@ export class FtpSession implements vscode.Disposable {
         await c.send("TYPE A");
         await c.uploadFrom(Readable.from([Buffer.alloc(0)]), quoteDsn(dsn));
       }
-      this.log.appendLine(`[${ts()}] Alocado ${dsn}`);
+      this.log.appendLine(`[${ts()}] Allocated ${dsn}`);
     });
   }
 
   /** Renomeia um data set ou membro (nomes completos, ex.: A.B(X) -> A.B(Y)). */
   async rename(from: string, to: string): Promise<void> {
-    await this.run(`renomear ${from}`, async (c) => {
+    await this.run(`rename ${from}`, async (c) => {
       await this.sendLogged(c, "SITE FILETYPE=SEQ");
       await this.sendLogged(c, `RNFR ${quoteDsn(from)}`);
       await this.sendLogged(c, `RNTO ${quoteDsn(to)}`);
@@ -448,7 +452,7 @@ export class FtpSession implements vscode.Disposable {
 
   /** Apaga um data set ou membro. */
   async remove(dsn: string): Promise<void> {
-    await this.run(`apagar ${dsn}`, async (c) => {
+    await this.run(`delete ${dsn}`, async (c) => {
       await this.sendLogged(c, "SITE FILETYPE=SEQ");
       await this.sendLogged(c, `DELE ${quoteDsn(dsn)}`);
     });
@@ -460,7 +464,7 @@ export class FtpSession implements vscode.Disposable {
 
   /** Submete JCL ao JES. Devolve o JOBID. */
   async submit(jcl: Buffer): Promise<{ jobId: string; message: string }> {
-    return this.run("submeter job", async (c) => {
+    return this.run("submit job", async (c) => {
       await c.send("TYPE A");
       await this.sendLogged(c, "SITE FILETYPE=JES");
       try {
@@ -468,7 +472,7 @@ export class FtpSession implements vscode.Disposable {
         const m = /\b(J(?:OB)?\d{5,7})\b/i.exec(res.message);
         this.log.appendLine(`[${ts()}] Submit: ${oneLine(res.message)}`);
         if (!m) {
-          throw new Error(`Não foi possível obter o JOBID: ${res.message}`);
+          throw new Error(`Could not get the JOBID: ${res.message}`);
         }
         return { jobId: m[1].toUpperCase(), message: res.message };
       } finally {
@@ -489,7 +493,7 @@ export class FtpSession implements vscode.Disposable {
 
   /** Listagem JES em bruto (LIST <jobid> ou LIST de todos os jobs com filtro). */
   async jesList(jobIdOrEmpty: string, jobNameFilter = "*", owner = ""): Promise<string> {
-    return this.run("estado do job", async (c) => {
+    return this.run("job status", async (c) => {
       await this.sendLogged(c, "SITE FILETYPE=JES");
       try {
         if (jobIdOrEmpty) {
@@ -552,7 +556,7 @@ export class FtpSession implements vscode.Disposable {
   }
 
   async deleteJob(jobId: string): Promise<void> {
-    await this.run(`apagar ${jobId}`, async (c) => {
+    await this.run(`purge ${jobId}`, async (c) => {
       await this.sendLogged(c, "SITE FILETYPE=JES");
       try {
         await this.jesById(c);
@@ -577,29 +581,30 @@ export class FtpSession implements vscode.Disposable {
     if (connected) {
       this.statusItem.text = `$(pass-filled) MF${label}`;
       this.statusItem.color = new vscode.ThemeColor("mainframeFtps.connectedForeground");
-      tip.appendMarkdown(`**$(pass-filled) Autenticado** como \`${this.userId}\` em **${name}** (\`${cfg.host}:${cfg.port}\`)\n\n`);
-      tip.appendMarkdown(`Ligado desde ${hhmm(this.connectedSince)} · último keepalive ${hhmmss(this.lastKeepAlive)}\n\n`);
-      tip.appendMarkdown(several ? "Clique para mudar de servidor ou desligar" : "Clique para desligar");
+      tip.appendMarkdown(`**$(pass-filled) Authenticated** as \`${this.userId}\` on **${name}** (\`${cfg.host}:${cfg.port}\`)\n\n`);
+      tip.appendMarkdown(`Connected since ${hhmm(this.connectedSince)} · last keepalive ${hhmmss(this.lastKeepAlive)}\n\n`);
+      tip.appendMarkdown(several ? "Click to switch server or disconnect" : "Click to disconnect");
       this.statusItem.command = several ? "mainframeFtps.selectServer" : "mainframeFtps.disconnect";
     } else if (this.connecting) {
-      this.statusItem.text = `$(sync~spin) MF${label} a ligar…`;
+      this.statusItem.text = `$(sync~spin) MF${label} connecting…`;
       this.statusItem.color = undefined;
-      tip.appendMarkdown(`A autenticar em ${name || "mainframe"}…`);
+      tip.appendMarkdown(`Authenticating on ${name || "mainframe"}…`);
       this.statusItem.command = undefined;
     } else {
       this.statusItem.text = `$(circle-large-outline) MF${label}`;
       this.statusItem.color = new vscode.ThemeColor("mainframeFtps.disconnectedForeground");
-      tip.appendMarkdown(`**$(circle-large-outline) Não autenticado**${name ? ` · próximo servidor: **${name}**` : ""}\n\n`);
-      tip.appendMarkdown(several ? "Clique para escolher o servidor e ligar (pede PIN + token)" : "Clique para ligar (pede PIN + token)");
+      tip.appendMarkdown(`**$(circle-large-outline) Not authenticated**${name ? ` · next server: **${name}**` : ""}\n\n`);
+      tip.appendMarkdown(several ? "Click to choose the server and connect (asks for PIN + token)" : "Click to connect (asks for PIN + token)");
       this.statusItem.command = several ? "mainframeFtps.selectServer" : "mainframeFtps.connect";
     }
+    tip.appendMarkdown(`\n\n---\n\n$(folder) Local folder: \`${localBase(this.context).fsPath}\``);
     this.statusItem.backgroundColor = undefined;
     this.statusItem.tooltip = tip;
   }
 
   /** Texto curto do estado, para as vistas. */
   get stateLabel(): string {
-    return this.isConnected ? `● ${this.userId}@${this.serverName}` : `○ desligado${this.server ? ` · ${this.server}` : ""}`;
+    return this.isConnected ? `● ${this.userId}@${this.serverName}` : `○ disconnected${this.server ? ` · ${this.server}` : ""}`;
   }
 
   dispose(): void {
@@ -615,7 +620,7 @@ const PIN_KEY = "mainframeFtps.pin";
 
 export class CancelledError extends Error {
   constructor() {
-    super("Cancelado");
+    super("Cancelled");
   }
 }
 
@@ -689,13 +694,13 @@ function oneLine(s: string): string {
 }
 
 function hhmm(t: number): string {
-  return new Date(t).toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" });
+  return new Date(t).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
 }
 
 function hhmmss(t: number): string {
-  return new Date(t).toLocaleTimeString("pt-PT");
+  return new Date(t).toLocaleTimeString("en-GB");
 }
 
 function ts(): string {
-  return new Date().toLocaleTimeString("pt-PT");
+  return new Date().toLocaleTimeString("en-GB");
 }

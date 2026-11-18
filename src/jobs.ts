@@ -100,15 +100,15 @@ export class JobsProvider implements vscode.TreeDataProvider<JobNode>, vscode.Di
       dd.description = [f.step, f.procStep].filter(Boolean).join(" ") + (f.bytes ? ` · ${fmtBytes(f.bytes)}` : "");
       dd.iconPath = new vscode.ThemeIcon("file-text");
       dd.contextValue = "mfJobDd";
-      dd.command = { command: "mainframeFtps.openSpool", title: "Ver DD", arguments: [node.job, f.id] };
+      dd.command = { command: "mainframeFtps.openSpool", title: "View DD", arguments: [node.job, f.id] };
       return dd;
     }
     const job = node;
     const item = new vscode.TreeItem(`${job.jobName || "?"}  ${job.jobId}`);
     item.description = [job.status, job.result].filter(Boolean).join(" · ");
-    item.tooltip = `${job.jobId} ${job.jobName}\nEstado: ${job.status} ${job.result}\nSubmetido: ${new Date(
+    item.tooltip = `${job.jobId} ${job.jobName}\nStatus: ${job.status} ${job.result}\nSubmitted: ${new Date(
       job.submitted
-    ).toLocaleString("pt-PT")}${job.source ? `\nOrigem: ${job.source}` : ""}`;
+    ).toLocaleString("en-GB")}${job.source ? `\nSource: ${job.source}` : ""}${job.server ? `\nServer: ${job.server}` : ""}`;
     const sev = severity(job);
     item.iconPath =
       sev === "running"
@@ -122,7 +122,7 @@ export class JobsProvider implements vscode.TreeDataProvider<JobNode>, vscode.Di
     // terminado: a seta mostra os DD (SYSOUT, JESMSGLG, ...); o clique abre o spool todo
     item.collapsibleState =
       job.status === "OUTPUT" ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None;
-    item.command = { command: "mainframeFtps.openSpool", title: "Ver spool", arguments: [job] };
+    item.command = { command: "mainframeFtps.openSpool", title: "View spool", arguments: [job] };
     return item;
   }
 
@@ -142,7 +142,7 @@ export class JobsProvider implements vscode.TreeDataProvider<JobNode>, vscode.Di
       return parseSpoolFiles(raw).map((file) => ({ kind: "dd" as const, job: node, file }));
     } catch (err) {
       if (!(err instanceof CancelledError)) {
-        this.log.appendLine(`Erro a listar os DD de ${node.jobId}: ${errText(err)}`);
+        this.log.appendLine(`Error listing the DDs of ${node.jobId}: ${errText(err)}`);
       }
       return [];
     }
@@ -194,7 +194,7 @@ export class JobsProvider implements vscode.TreeDataProvider<JobNode>, vscode.Di
       Object.assign(job, parsed);
     } else {
       job.status = "?";
-      job.result = "não encontrado no JES";
+      job.result = "not found in JES";
     }
     await this.save();
     return job;
@@ -224,7 +224,7 @@ export class JobsProvider implements vscode.TreeDataProvider<JobNode>, vscode.Di
         await this.refresh(job);
       } catch (err) {
         if (!(err instanceof CancelledError)) {
-          this.log.appendLine(`Erro a consultar ${job.jobId}: ${errText(err)}`);
+          this.log.appendLine(`Error checking ${job.jobId}: ${errText(err)}`);
         }
         this.stopPolling(job.jobId);
         return;
@@ -246,7 +246,7 @@ export class JobsProvider implements vscode.TreeDataProvider<JobNode>, vscode.Di
   }
 
   private async notifyFinished(job: JobInfo): Promise<void> {
-    const msg = `${job.jobName} ${job.jobId} terminou: ${job.result || "OUTPUT"}`;
+    const msg = `${job.jobName} ${job.jobId} ended: ${job.result || "OUTPUT"}`;
     const sev = severity(job);
     const show =
       sev === "error"
@@ -254,7 +254,7 @@ export class JobsProvider implements vscode.TreeDataProvider<JobNode>, vscode.Di
         : sev === "warn"
         ? vscode.window.showWarningMessage
         : vscode.window.showInformationMessage;
-    const action = await show(msg, "Ver spool");
+    const action = await show(msg, "View spool");
     if (action) {
       vscode.commands.executeCommand("mainframeFtps.openSpool", job);
     }

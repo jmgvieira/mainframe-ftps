@@ -29,7 +29,7 @@ export interface SpoolSection {
 /** Linha de cabeçalho de cada DD no documento. */
 export const HEADER_PREFIX = "=== ";
 export const HEADER_RE = /^=== (\S+)(?: \| ([^|]*?))? \| #(\d{3}) =*$/;
-export const SUMMARY_TITLE = "=== RESUMO ";
+export const SUMMARY_TITLE = "=== SUMMARY ";
 
 const END_OF_FILE = /^\s*!! END OF JES SPOOL FILE !!\s*$/;
 
@@ -173,20 +173,20 @@ export function formatSpool(h: SpoolHeader, secs: SpoolSection[], removeAsa: boo
   const body = secs.map((s) => ({ ...s, text: removeAsa ? stripAsa(s.text) : s.text }));
   const steps = stepResults(body.map((s) => s.text).join("\n"));
   const out: string[] = [];
-  const hora = h.readAt.toLocaleString("pt-PT");
+  const hora = h.readAt.toLocaleString("en-GB");
   out.push(`${SUMMARY_TITLE}`.padEnd(80, "="));
   out.push(`JOB ${h.jobName}  ${h.jobId}${h.owner ? `  ${h.owner}` : ""}   ${h.status ?? ""} ${h.result ?? ""}`.trimEnd());
-  out.push(`Lido em ${hora}`);
+  out.push(`Read at ${hora}`);
   out.push("");
   if (steps.length) {
     out.push("STEP               RC");
     for (const s of steps) {
       const rc =
-        s.result === "FLUSH" ? "FLUSH (não executado)" : /^\d{4}$/.test(s.result) ? `RC ${s.result}` : `ABEND ${s.result}`;
+        s.result === "FLUSH" ? "FLUSH (not executed)" : /^\d{4}$/.test(s.result) ? `RC ${s.result}` : `ABEND ${s.result}`;
       out.push(`${s.step.padEnd(17)}  ${rc}`);
     }
   } else {
-    out.push("(sem mensagens IEF142I/IEF450I – job ainda a correr ou erro de JCL)");
+    out.push("(no IEF142I/IEF450I messages – job still running or JCL error)");
   }
   out.push("");
   out.push("DD        STEP      BYTES");
@@ -207,7 +207,7 @@ export function documentSections(lines: string[]): Array<{ name: string; detail:
   const heads: Array<{ name: string; detail: string; id: string; start: number }> = [];
   lines.forEach((l, i) => {
     if (l.startsWith(SUMMARY_TITLE)) {
-      heads.push({ name: "Resumo", detail: "", id: "000", start: i });
+      heads.push({ name: "Summary", detail: "", id: "000", start: i });
       return;
     }
     const m = HEADER_RE.exec(l);

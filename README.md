@@ -3,9 +3,6 @@
 Write your JCL/Easytrieve in VS Code. When you save, the file is written to the mainframe PDS.
 Then submit the job and follow its status without leaving the editor.
 
-> The extension's menus and messages are in Portuguese. Below, each command is shown with its
-> name as it appears in VS Code, followed by its meaning in English.
-
 ## Install
 
 1. In VS Code, open **Extensions**, search for **Mainframe FTPS** (publisher JorgeMiguel) and install it.
@@ -23,7 +20,7 @@ Example `settings.json`:
 "mainframeFtps.port": 990,
 "mainframeFtps.tlsMode": "explicit",
 "mainframeFtps.user": "U12345",
-"mainframeFtps.siteCommands": []
+"mainframeFtps.localFolder": "C:\\Mainframe"
 ```
 
 ## Servers
@@ -35,14 +32,29 @@ Example `settings.json`:
 - To switch server, click the **MF** indicator in the status bar (bottom left) or the server button
   at the top of the **Mainframe** view. A list with your servers appears; pick one and the extension
   closes the current session and connects to the new one, asking for PIN + token.
-  The same list has **Desligar** (disconnect) and **Editar lista de servidores…** (edit the server list).
-- The command **Mainframe: Escolher servidor** (choose server) opens the same list.
+  The same list has **Disconnect** and **Edit server list…**.
+- The command **Mainframe: Choose server** opens the same list.
 - The user ID, PIN, TLS mode and code page are the same for every server.
-- The old `mainframeFtps.host` setting still works: if filled in, it appears as the first server of the list.
 - Each file remembers the server it came from. If you save or submit it while connected to another
   server, the extension asks first whether to use the current server or switch to the original one.
   This prevents, for example, saving a member from the test system into production.
 - The **Jobs** view shows the jobs of the current server.
+- Upgrading from 0.4 or earlier: the old `mainframeFtps.host` setting is moved to `mainframeFtps.hosts` automatically.
+
+## Local folder
+
+- Files opened from the **Mainframe** view are kept in a local folder, with the same names as on the mainframe:
+  `<folder>\<PDS>\<MEMBER>` and `<folder>\<DSN>`.
+- The folder is set in `mainframeFtps.localFolder`:
+  - filled in: that folder (e.g. `C:\Mainframe`);
+  - empty, with a folder open in VS Code: `mainframe\` inside it;
+  - empty, with no folder open: you are asked once where to keep the files (a folder of your choice,
+    or the VS Code storage).
+- **Mainframe: Choose local folder…** picks the folder in the Windows folder dialog, without typing the path.
+- **Mainframe: Open local folder in file explorer** opens it in Windows Explorer.
+  Both are also in the **…** menu of the **Data sets** view.
+- The current folder is shown in the tooltip of the **MF** indicator in the status bar.
+- The file → data set associations are kept in `.mainframe-ftps.json` inside the same folder.
 
 ## How the login works
 
@@ -60,31 +72,22 @@ Example `settings.json`:
 - In the status bar (bottom left):
   - **green** `✔ MF PROD`: authenticated on server PROD;
   - **grey** `○ MF PROD`: not authenticated (PROD is the server used on the next connection);
-  - `⟳ MF PROD a ligar…`: authenticating.
-- Hovering shows the server, since when you are connected and the time of the last keepalive.
+  - `⟳ MF PROD connecting…`: authenticating.
+- Hovering shows the server, since when you are connected, the time of the last keepalive and the local folder.
 - With a single server, a click connects or disconnects. With several servers, a click opens the server list.
-- The top of the **Data sets** view shows the same state (`● U12345@PROD` or `○ desligado`).
+- The top of the **Data sets** view shows the same state (`● U12345@PROD` or `○ disconnected`).
 
 ## Browsing data sets
 
 - The **Mainframe** icon in the activity bar (left) opens the **Data sets** and **Jobs** views.
-- **Add a filter**, for example `U12345.*`, to list data sets as in ISPF 3.4.
+- **Add data set filter**, for example `U12345.*`, lists data sets as in ISPF 3.4.
   - A PDS expands to show its members.
   - Clicking a member or a sequential data set opens it in the editor. `Ctrl+S` saves it back to the mainframe.
-- Files opened from the view keep the mainframe names: `mainframe/<PDS>/<MEMBER>` and `mainframe/<DSN>`,
-  inside the folder open in VS Code (or in the extension storage when no folder is open).
-  The folder can be changed in `localFolder`.
 - The language (JCL, Easytrieve, COBOL) comes from the data set qualifiers
   (JCL/CNTL/PROC → JCL, EZT → Easytrieve, …). Configure it with `qualifierExtensions`;
   names that do not indicate a language use `defaultExtension` (JCL by default).
-- Right-click menu:
-  - **Novo membro** – new member;
-  - **Novo data set** – new data set (PDSE, PDS or sequential; RECFM, LRECL and space);
-  - **Novo data set igual a este** – new data set like this one;
-  - **Renomear** – rename;
-  - **Apagar** – delete, always with confirmation;
-  - **Submeter** – submit;
-  - **Copiar nome** – copy name.
+- Right-click menu: **New member…**, **New data set…** (PDSE, PDS or sequential; RECFM, LRECL and space),
+  **New data set like this one…**, **Rename…**, **Delete…** (always with confirmation), **Submit** and **Copy name**.
 - Migrated data sets (HSM) show a cloud icon. Opening one starts the recall.
 - Names with national characters (`#`, `@`) are shown correctly, even with code page IBM-1147.
 
@@ -93,11 +96,10 @@ Example `settings.json`:
 - Files opened from the **Mainframe** view already know their destination: every `Ctrl+S` writes them to the mainframe.
 - For other files, on the **first save** of a `.jcl`, `.ezt`, `.cbl`, `.cpy` or `.proc`, the extension asks
   for the destination: library (e.g. `U12345.JCL.LIB`) and member (it suggests the file name).
-  You can also answer "Nunca para este ficheiro" (never for this file).
-- The association is kept in `.vscode/mainframe-ftps.json`. From then on, every `Ctrl+S` also writes to the PDS.
-- **Mainframe: Alterar destino (PDS/membro) do ficheiro** changes the destination.
-- **Mainframe: Gravar ficheiro no mainframe** saves any file to the mainframe on demand.
-- **Mainframe: Abrir membro do mainframe…** lists the members of a PDS, downloads one and associates it.
+  You can also answer **Never for this file**.
+- **Mainframe: Change file destination (PDS/member)** changes the destination.
+- **Mainframe: Save file to mainframe** saves any file to the mainframe on demand.
+- **Mainframe: Open mainframe member…** lists the members of a PDS, downloads one and associates it.
 - Before sending, the extension:
   - converts tabs into spaces;
   - warns about lines longer than 80 columns (`recordLength`);
@@ -105,13 +107,13 @@ Example `settings.json`:
 
 ## Submitting and following jobs
 
-- **Mainframe: Submeter JCL** (`Ctrl+Alt+J`, or the 🚀 icon at the top of a JCL file) sends the JCL to JES
+- **Mainframe: Submit JCL** (`Ctrl+Alt+J`, or the 🚀 icon at the top of a JCL file) sends the JCL to JES
   and shows the JOBID.
 - The **Jobs** view shows the submitted jobs. The status is refreshed automatically
   (every 5 s, up to 10 min) and a notification appears when the job ends, with the RC or the ABEND.
 - Click a job to see the **full spool** in a read-only tab, with a step summary and one section per DD.
   The context menu lets you refresh the status and purge the job.
-- **Mainframe: Listar jobs no JES** lists your jobs by name filter.
+- **Mainframe: List jobs in JES** lists your jobs by name filter.
 
 ## Mainframe requirements
 
@@ -131,7 +133,7 @@ Example `settings.json`:
 
 ## Troubleshooting
 
-**Mainframe: Mostrar log** (show log) opens the output channel with the FTP commands and replies,
+**Mainframe: Show log** opens the output channel with the FTP commands and replies,
 each file opened and saved, and the reason when a saved file is not sent to the mainframe.
 The password never appears in the log.
 

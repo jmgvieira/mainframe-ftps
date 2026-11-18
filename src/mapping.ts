@@ -7,11 +7,21 @@ export type Target = string;
 export const IGNORE = "IGNORE";
 
 const MAP_FILE = "mainframe-ftps.json";
+/** Ficheiro de associações dentro da pasta local da extensão. */
+const LOCAL_MAP_FILE = ".mainframe-ftps.json";
+
+/** Um ficheiro de associações e o caminho relativo do ficheiro local dentro dele. */
+interface Store {
+  file: vscode.Uri;
+  rel: string;
+}
 
 /**
- * Associação ficheiro local -> data set/membro.
- * Dentro de uma pasta de workspace fica em .vscode/mainframe-ftps.json (caminhos relativos),
- * fora de um workspace fica no estado global da extensão.
+ * Associação ficheiro local -> data set/membro (e servidor de origem).
+ * - Ficheiros dentro da pasta local da extensão: <pasta local>/.mainframe-ftps.json.
+ * - Outros ficheiros dentro de uma pasta de workspace: .vscode/mainframe-ftps.json.
+ * - Fora de ambas: estado global da extensão.
+ * Na leitura também se procura nos sítios usados pelas versões anteriores.
  */
 export class TargetMap {
   /** Associações desta sessão do VS Code (não depende de ler o .json). */
@@ -22,8 +32,7 @@ export class TargetMap {
 
   /**
    * Destino de um ficheiro: associação guardada ou, para ficheiros na pasta local
-   * da extensão (mainframe/<PDS>/<MEMBRO>.<ext> ou mainframe/<DSN>.<ext>), o destino
-   * deduzido do caminho.
+   * da extensão (<pasta>/<PDS>/<MEMBRO> ou <pasta>/<DSN>), o destino deduzido do caminho.
    */
   async get(uri: vscode.Uri): Promise<Target | undefined> {
     return (await this.stored(uri)) ?? targetFromPath(uri, localBase(this.context));
@@ -35,10 +44,8 @@ export class TargetMap {
     if (this.cache.has(k)) {
       return this.cache.get(k);
     }
-    const loc = this.locate(uri);
-    if (loc) {
-      const data = await this.read(loc.folder);
-      const hit = findKey(data.files, loc.rel);
+    for (const st of this.stores(uri)) {
+      const hit = findKey((await this.read(st.file)).files, st.rel);
       if (hit !== undefined) {
         return hit;
       }
@@ -63,23 +70,30 @@ export class TargetMap {
     } else {
       this.serverCache.delete(k);
     }
-    const loc = this.locate(uri);
-    if (loc) {
-      const data = await this.read(loc.folder);
-      if (target === undefined) {
-        delete data.files[loc.rel];
-      } else {
-        data.files[loc.rel] = target;
-        if (target !== IGNORE) {
-          data.lastPds = pdsOf(target);
+    const stores = this.stores(uri);
+    if (stores.length) {
+      // grava no primeiro sítio e retira dos antigos, para não haver duas versões
+      for (const [i, st] of stores.entries()) {
+        const data = await this.read(st.file);
+        const had = findKey(data.files, st.rel) !== undefined;
+        if (i > 0 && !had) {
+          continue;
         }
+        delete data.files[st.rel];
+        delete data.servers[st.rel];
+        if (i === 0) {
+          if (target !== undefined) {
+            data.files[st.rel] = target;
+            if (target !== IGNORE) {
+              data.lastPds = pdsOf(target);
+            }
+          }
+          if (server) {
+            data.servers[st.rel] = server;
+          }
+        }
+        await this.write(st.file, data);
       }
-      if (server) {
-        data.servers[loc.rel] = server;
-      } else {
-        delete data.servers[loc.rel];
-      }
-      await this.write(loc.folder, data);
       return;
     }
     const all = { ...this.context.globalState.get<Record<string, string>>("mainframeFtps.map", {}) };
@@ -107,9 +121,8 @@ export class TargetMap {
     if (this.serverCache.has(k)) {
       return this.serverCache.get(k);
     }
-    const loc = this.locate(uri);
-    if (loc) {
-      const hit = findKey((await this.read(loc.folder)).servers, loc.rel);
+    for (const st of this.stores(uri)) {
+      const hit = findKey((await this.read(st.file)).servers, st.rel);
       if (hit !== undefined) {
         return hit;
       }
@@ -118,9 +131,8 @@ export class TargetMap {
   }
 
   async lastPds(uri: vscode.Uri): Promise<string> {
-    const loc = this.locate(uri);
-    if (loc) {
-      const data = await this.read(loc.folder);
+    for (const st of this.stores(uri)) {
+      const data = await this.read(st.file);
       if (data.lastPds) {
         return data.lastPds;
       }
@@ -128,22 +140,23 @@ export class TargetMap {
     return this.context.globalState.get<string>("mainframeFtps.lastPds", "");
   }
 
-  private locate(uri: vscode.Uri): { folder: vscode.WorkspaceFolder; rel: string } | undefined {
-    const folder = vscode.workspace.getWorkspaceFolder(uri);
-    if (!folder) {
-      return undefined;
+  /** Ficheiros de associações aplicáveis a um ficheiro, por ordem de preferência. */
+  private stores(uri: vscode.Uri): Store[] {
+    const out: Store[] = [];
+    const base = localBase(this.context);
+    if (isInside(uri, base)) {
+      out.push({ file: vscode.Uri.joinPath(base, LOCAL_MAP_FILE), rel: relPath(base, uri) });
     }
-    const rel = path.relative(folder.uri.fsPath, uri.fsPath).split(path.sep).join("/");
-    return { folder, rel };
+    const folder = vscode.workspace.getWorkspaceFolder(uri);
+    if (folder) {
+      out.push({ file: vscode.Uri.joinPath(folder.uri, ".vscode", MAP_FILE), rel: relPath(folder.uri, uri) });
+    }
+    return out;
   }
 
-  private fileUri(folder: vscode.WorkspaceFolder): vscode.Uri {
-    return vscode.Uri.joinPath(folder.uri, ".vscode", MAP_FILE);
-  }
-
-  private async read(folder: vscode.WorkspaceFolder): Promise<MapData> {
+  private async read(file: vscode.Uri): Promise<MapData> {
     try {
-      const bytes = await vscode.workspace.fs.readFile(this.fileUri(folder));
+      const bytes = await vscode.workspace.fs.readFile(file);
       const parsed = JSON.parse(Buffer.from(bytes).toString("utf8"));
       return { lastPds: parsed.lastPds ?? "", files: parsed.files ?? {}, servers: parsed.servers ?? {} };
     } catch {
@@ -151,11 +164,23 @@ export class TargetMap {
     }
   }
 
-  private async write(folder: vscode.WorkspaceFolder, data: MapData): Promise<void> {
-    await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(folder.uri, ".vscode"));
+  private async write(file: vscode.Uri, data: MapData): Promise<void> {
+    await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(file, ".."));
     const text = JSON.stringify(data, null, 2) + "\n";
-    await vscode.workspace.fs.writeFile(this.fileUri(folder), Buffer.from(text, "utf8"));
+    await vscode.workspace.fs.writeFile(file, Buffer.from(text, "utf8"));
   }
+}
+
+function isInside(uri: vscode.Uri, base: vscode.Uri): boolean {
+  if (uri.scheme !== base.scheme) {
+    return false;
+  }
+  const rel = path.relative(base.fsPath, uri.fsPath);
+  return !!rel && !rel.startsWith("..") && !path.isAbsolute(rel);
+}
+
+function relPath(base: vscode.Uri, uri: vscode.Uri): string {
+  return path.relative(base.fsPath, uri.fsPath).split(path.sep).join("/");
 }
 
 interface MapData {
@@ -245,19 +270,19 @@ const MEMBER = /^[A-Z#@$][A-Z0-9#@$]{0,7}$/;
 export function validateDsn(v: string): string | undefined {
   const d = v.trim().toUpperCase().replace(/^'|'$/g, "");
   if (!d) {
-    return "Indique o data set";
+    return "Enter the data set name";
   }
   if (d.length > 44) {
-    return "Máximo 44 caracteres";
+    return "Maximum 44 characters";
   }
   if (!d.split(".").every((q) => QUAL.test(q))) {
-    return "Cada qualificador: 1–8 caracteres, começa por letra ou #@$";
+    return "Each qualifier: 1–8 characters, starting with a letter or #@$";
   }
   return undefined;
 }
 
 export function validateMember(v: string): string | undefined {
-  return MEMBER.test(v.trim().toUpperCase()) ? undefined : "Membro: 1–8 caracteres, começa por letra ou #@$";
+  return MEMBER.test(v.trim().toUpperCase()) ? undefined : "Member: 1–8 characters, starting with a letter or #@$";
 }
 
 /** Sugere um nome de membro a partir do nome do ficheiro. */

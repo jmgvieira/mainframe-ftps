@@ -2,7 +2,7 @@
   "name": "mainframe-ftps",
   "displayName": "Mainframe FTPS (z/OS)",
   "description": "Browse z/OS data sets, edit members with automatic save to the PDS, submit jobs and view the spool, over a single FTPS session with keepalive and PIN + token login.",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "publisher": "JorgeMiguel",
   "license": "MIT",
   "icon": "icon.png",
@@ -36,167 +36,179 @@
     "commands": [
       {
         "command": "mainframeFtps.connect",
-        "title": "Ligar ao mainframe",
+        "title": "Connect to mainframe",
         "category": "Mainframe",
         "icon": "$(plug)"
       },
       {
         "command": "mainframeFtps.disconnect",
-        "title": "Desligar do mainframe",
+        "title": "Disconnect from mainframe",
         "category": "Mainframe",
         "icon": "$(debug-disconnect)"
       },
       {
         "command": "mainframeFtps.upload",
-        "title": "Gravar ficheiro no mainframe",
+        "title": "Save file to mainframe",
         "category": "Mainframe",
         "icon": "$(cloud-upload)"
       },
       {
         "command": "mainframeFtps.setTarget",
-        "title": "Alterar destino (PDS/membro) do ficheiro",
+        "title": "Change file destination (PDS/member)",
         "category": "Mainframe"
       },
       {
         "command": "mainframeFtps.clearTarget",
-        "title": "Remover destino do ficheiro",
+        "title": "Remove file destination",
         "category": "Mainframe"
       },
       {
         "command": "mainframeFtps.submit",
-        "title": "Submeter JCL",
+        "title": "Submit JCL",
         "category": "Mainframe",
         "icon": "$(rocket)"
       },
       {
         "command": "mainframeFtps.jobStatus",
-        "title": "Atualizar estado do job",
+        "title": "Refresh job status",
         "category": "Mainframe",
         "icon": "$(refresh)"
       },
       {
         "command": "mainframeFtps.openSpool",
-        "title": "Ver spool",
+        "title": "View spool",
         "category": "Mainframe",
         "icon": "$(output)"
       },
       {
         "command": "mainframeFtps.listJobs",
-        "title": "Listar jobs no JES",
+        "title": "List jobs in JES",
         "category": "Mainframe",
         "icon": "$(list-unordered)"
       },
       {
         "command": "mainframeFtps.refreshJobs",
-        "title": "Atualizar estado dos jobs",
+        "title": "Refresh job statuses",
         "category": "Mainframe",
         "icon": "$(refresh)"
       },
       {
         "command": "mainframeFtps.clearJobs",
-        "title": "Limpar lista de jobs",
+        "title": "Clear job list",
         "category": "Mainframe",
         "icon": "$(clear-all)"
       },
       {
         "command": "mainframeFtps.removeJob",
-        "title": "Remover da lista",
+        "title": "Remove from list",
         "category": "Mainframe"
       },
       {
         "command": "mainframeFtps.purgeJob",
-        "title": "Apagar job do JES (purge)",
+        "title": "Delete job from JES (purge)",
         "category": "Mainframe"
       },
       {
         "command": "mainframeFtps.openMember",
-        "title": "Abrir membro do mainframe…",
+        "title": "Open mainframe member…",
         "category": "Mainframe",
         "icon": "$(cloud-download)"
       },
       {
         "command": "mainframeFtps.forgetPin",
-        "title": "Esquecer PIN guardado",
+        "title": "Forget stored PIN",
         "category": "Mainframe"
       },
       {
         "command": "mainframeFtps.showLog",
-        "title": "Mostrar log",
+        "title": "Show log",
         "category": "Mainframe"
       },
       {
         "command": "mainframeFtps.addFilter",
-        "title": "Adicionar filtro de data sets",
+        "title": "Add data set filter",
         "category": "Mainframe",
         "icon": "$(filter)"
       },
       {
         "command": "mainframeFtps.editFilter",
-        "title": "Alterar filtro",
+        "title": "Edit filter",
         "category": "Mainframe",
         "icon": "$(edit)"
       },
       {
         "command": "mainframeFtps.removeFilter",
-        "title": "Remover filtro",
+        "title": "Remove filter",
         "category": "Mainframe",
         "icon": "$(close)"
       },
       {
         "command": "mainframeFtps.refreshDatasets",
-        "title": "Atualizar",
+        "title": "Refresh",
         "category": "Mainframe",
         "icon": "$(refresh)"
       },
       {
         "command": "mainframeFtps.openDataset",
-        "title": "Abrir",
+        "title": "Open",
         "category": "Mainframe",
         "icon": "$(go-to-file)"
       },
       {
         "command": "mainframeFtps.newMember",
-        "title": "Novo membro…",
+        "title": "New member…",
         "category": "Mainframe",
         "icon": "$(new-file)"
       },
       {
         "command": "mainframeFtps.newDataset",
-        "title": "Novo data set…",
+        "title": "New data set…",
         "category": "Mainframe",
         "icon": "$(new-folder)"
       },
       {
         "command": "mainframeFtps.renameItem",
-        "title": "Renomear…",
+        "title": "Rename…",
         "category": "Mainframe"
       },
       {
         "command": "mainframeFtps.deleteItem",
-        "title": "Apagar…",
+        "title": "Delete…",
         "category": "Mainframe"
       },
       {
         "command": "mainframeFtps.submitMember",
-        "title": "Submeter",
+        "title": "Submit",
         "category": "Mainframe",
         "icon": "$(rocket)"
       },
       {
         "command": "mainframeFtps.copyName",
-        "title": "Copiar nome",
+        "title": "Copy name",
         "category": "Mainframe"
       },
       {
         "command": "mainframeFtps.newDatasetLike",
-        "title": "Novo data set igual a este…",
+        "title": "New data set like this one…",
         "category": "Mainframe"
       },
       {
         "command": "mainframeFtps.selectServer",
-        "title": "Escolher servidor",
+        "title": "Choose server",
         "category": "Mainframe",
         "icon": "$(server)"
+      },
+      {
+        "command": "mainframeFtps.chooseLocalFolder",
+        "title": "Choose local folder…",
+        "category": "Mainframe",
+        "icon": "$(folder-opened)"
+      },
+      {
+        "command": "mainframeFtps.openLocalFolder",
+        "title": "Open local folder in file explorer",
+        "category": "Mainframe",
+        "icon": "$(folder)"
       }
     ],
     "views": {
@@ -215,22 +227,22 @@
       {
         "view": "mainframeFtps.datasets",
         "when": "!mainframeFtps.connected",
-        "contents": "Não autenticado no mainframe.\n[$(plug) Ligar (PIN + token)](command:mainframeFtps.connect)"
+        "contents": "Not authenticated on the mainframe.\n[$(plug) Connect (PIN + token)](command:mainframeFtps.connect)"
       },
       {
         "view": "mainframeFtps.datasets",
         "when": "mainframeFtps.connected",
-        "contents": "Adicione um filtro para ver os seus data sets, como no ISPF 3.4.\n[$(filter) Adicionar filtro](command:mainframeFtps.addFilter)\n[$(new-folder) Novo data set](command:mainframeFtps.newDataset)"
+        "contents": "Add a filter to see your data sets, as in ISPF 3.4.\n[$(filter) Add filter](command:mainframeFtps.addFilter)\n[$(new-folder) New data set](command:mainframeFtps.newDataset)"
       },
       {
         "view": "mainframeFtps.jobs",
         "when": "!mainframeFtps.connected",
-        "contents": "Ainda não submeteu jobs nesta pasta.\n[$(plug) Ligar (PIN + token)](command:mainframeFtps.connect)"
+        "contents": "You have not submitted jobs from this folder yet.\n[$(plug) Connect (PIN + token)](command:mainframeFtps.connect)"
       },
       {
         "view": "mainframeFtps.jobs",
         "when": "mainframeFtps.connected",
-        "contents": "Ainda não submeteu jobs nesta pasta. Clique num job para ver o spool.\n[$(list-unordered) Listar os meus jobs no JES](command:mainframeFtps.listJobs)"
+        "contents": "You have not submitted jobs from this folder yet. Click a job to see its spool.\n[$(list-unordered) List my jobs in JES](command:mainframeFtps.listJobs)"
       }
     ],
     "menus": {
@@ -279,6 +291,16 @@
           "command": "mainframeFtps.clearJobs",
           "when": "view == mainframeFtps.jobs",
           "group": "navigation@3"
+        },
+        {
+          "command": "mainframeFtps.chooseLocalFolder",
+          "when": "view == mainframeFtps.datasets",
+          "group": "9_folder@1"
+        },
+        {
+          "command": "mainframeFtps.openLocalFolder",
+          "when": "view == mainframeFtps.datasets",
+          "group": "9_folder@2"
         }
       ],
       "view/item/context": [
@@ -479,14 +501,15 @@
         "mainframeFtps.host": {
           "type": "string",
           "default": "",
-          "order": 1,
-          "markdownDescription": "z/OS FTP server address. Kept for compatibility: prefer the list in `#mainframeFtps.hosts#`. If filled in, it appears as the first server of the list."
+          "order": 99,
+          "markdownDeprecationMessage": "Replaced by `#mainframeFtps.hosts#`. The value is moved there automatically when the extension starts.",
+          "description": "Old single-server setting (replaced by mainframeFtps.hosts)."
         },
         "mainframeFtps.port": {
           "type": "number",
           "default": 990,
           "order": 2,
-          "markdownDescription": "Default FTPS port, used for servers in `#mainframeFtps.hosts#` without an explicit port."
+          "markdownDescription": "Default FTPS port, for servers in `#mainframeFtps.hosts#` without an explicit port."
         },
         "mainframeFtps.tlsMode": {
           "type": "string",
@@ -643,7 +666,7 @@
           "type": "string",
           "default": "",
           "order": 21,
-          "markdownDescription": "Local folder for members opened from the Mainframe view, with the same names as on the mainframe (`<PDS>/<MEMBER>`). Empty = `mainframe/` inside the folder open in VS Code. `${workspaceFolder}` and relative paths are accepted."
+          "markdownDescription": "Local folder for files opened from the Mainframe view, with the same names as on the mainframe (`<PDS>/<MEMBER>`). The file associations (`.mainframe-ftps.json`) are kept in the same folder.\n\nEmpty = `mainframe/` inside the folder open in VS Code; with no folder open, you are asked once where to keep the files. Use **Mainframe: Choose local folder…** to pick it without typing. `${workspaceFolder}` and relative paths are accepted."
         },
         "mainframeFtps.qualifierExtensions": {
           "type": "object",
