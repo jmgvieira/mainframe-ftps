@@ -167,7 +167,7 @@ No VS Code: Extensions → menu ⋯ → **Install from VSIX...**. Pela linha de 
 
 ## 6. Estrutura de pastas
 
-O projeto é pequeno: 9 ficheiros TypeScript e alguns ficheiros de configuração.
+O projeto é pequeno: 11 ficheiros TypeScript e alguns ficheiros de configuração.
 
 ```text
 mainframe-ftps/
@@ -176,6 +176,8 @@ mainframe-ftps/
 │  ├─ session.ts             a ligação FTPS: login, fila, keepalive, operações z/OS
 │  ├─ browse.ts              comandos da vista Data sets (abrir, criar, renomear, apagar...)
 │  ├─ datasets.ts            árvore Data sets + interpretação das listagens MVS
+│  ├─ jobview.ts             árvore "In this job": data sets do JCL ativo
+│  ├─ jcl.ts                 leitura do JCL: steps, DDs, DSN, DISP, símbolos SET
 │  ├─ jobs.ts                árvore Jobs + polling do estado + interpretação das listagens JES
 │  ├─ spool.ts               formatação do spool (resumo de steps, cabeçalhos por DD, ASA)
 │  ├─ mapping.ts             associação ficheiro local → PDS(membro); validação de nomes
@@ -287,6 +289,14 @@ A árvore da vista **Data sets**. Os nós são do tipo `MfNode`: `filter` → `d
 ### `browse.ts` (418 linhas)
 
 Os comandos da vista Data sets, registados por `registerBrowse()`: filtros, abrir, novo membro, novo data set (PDSE, PDS ou PS, ou "igual a este"), renomear, apagar, submeter e copiar nome. `localUri()` decide onde fica a cópia local (`mainframe/<PDS>/<MEMBRO>.<ext>`). `extFor()` escolhe a extensão pelos qualificadores do nome: `JCL`/`CNTL`/`PROC` dão `.jcl`, `EZT`/`EASY` dão `.ezt`, `COBOL` dá `.cbl`, `COPY` dá `.cpy`, e o resto dá `.txt`. `openRemote()` descarrega o membro, grava a cópia local, associa-a ao destino e abre-a, por isso o Ctrl+S seguinte já grava no sítio certo.
+
+### `jcl.ts` (282 linhas)
+
+Lê um JCL e devolve os data sets por step (`parseJcl()`). Não usa o VS Code, por isso pode ser testado só com node. Junta as linhas de continuação (operando acabado em vírgula), ignora as colunas 73–80, os comentários `//*` e os dados instream (`DD *` até `/*` ou `//`, `DD DATA` até `/*` ou ao `DLM=`). Resolve os símbolos dos `SET` (e os valores por omissão de um `PROC` instream) com `resolveSymbols()`: `&HLQ..DADOS` dá `PROD.DADOS`. Deixa de fora `&&TEMP`, `SYSOUT`, `DUMMY`, `NULLFILE` e referências `*.STEP.DD`. `JCLLIB` e `JOBLIB` ficam num grupo `JOB` no início.
+
+### `jobview.ts` (408 linhas)
+
+A vista **In this job**. `registerJobView()` segue o editor ativo: quando é JCL (`looksLikeJcl()`: linguagem, extensão `.jcl` ou um cartão JOB/EXEC nas primeiras linhas), volta a ler o texto (também ao escrever, com 500 ms de espera). Outros ficheiros não apagam a lista, para se poder abrir o SYSIN e voltar. O `JobDatasetsProvider` procura cada data set no catálogo, um de cada vez e só com a ligação aberta, e guarda os atributos em `attrs` (`null` = não existe). Os que não existiam voltam a ser procurados quando um job termina (`JobsProvider.onDidFinish`). Abrir reutiliza o comando `mainframeFtps.openDataset` da vista Data sets.
 
 ### `jobs.ts` (264 linhas)
 

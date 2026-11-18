@@ -2,7 +2,7 @@
   "name": "mainframe-ftps",
   "displayName": "Mainframe FTPS (z/OS)",
   "description": "Browse z/OS data sets, edit members with automatic save to the PDS, submit jobs and view the spool, over a single FTPS session with keepalive and PIN + token login.",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "publisher": "JorgeMiguel",
   "license": "MIT",
   "icon": "icon.png",
@@ -209,10 +209,37 @@
         "title": "Open local folder in file explorer",
         "category": "Mainframe",
         "icon": "$(folder)"
+      },
+      {
+        "command": "mainframeFtps.refreshJobDatasets",
+        "title": "Refresh",
+        "category": "Mainframe",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "mainframeFtps.openJobDataset",
+        "title": "Open",
+        "category": "Mainframe",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "mainframeFtps.revealJclLine",
+        "title": "Go to line in JCL",
+        "category": "Mainframe",
+        "icon": "$(list-selection)"
+      },
+      {
+        "command": "mainframeFtps.copyJobDataset",
+        "title": "Copy name",
+        "category": "Mainframe"
       }
     ],
     "views": {
       "mainframe": [
+        {
+          "id": "mainframeFtps.jobDatasets",
+          "name": "In this job"
+        },
         {
           "id": "mainframeFtps.datasets",
           "name": "Data sets"
@@ -224,6 +251,10 @@
       ]
     },
     "viewsWelcome": [
+      {
+        "view": "mainframeFtps.jobDatasets",
+        "contents": "Open a JCL in the editor to see the data sets it uses, grouped by step. Click a data set to open it."
+      },
       {
         "view": "mainframeFtps.datasets",
         "when": "!mainframeFtps.connected",
@@ -301,6 +332,11 @@
           "command": "mainframeFtps.openLocalFolder",
           "when": "view == mainframeFtps.datasets",
           "group": "9_folder@2"
+        },
+        {
+          "command": "mainframeFtps.refreshJobDatasets",
+          "when": "view == mainframeFtps.jobDatasets",
+          "group": "navigation@1"
         }
       ],
       "view/item/context": [
@@ -393,6 +429,26 @@
           "command": "mainframeFtps.deleteItem",
           "when": "viewItem =~ /^(mfDsPO|mfDsPS|mfMember)$/",
           "group": "3@1"
+        },
+        {
+          "command": "mainframeFtps.revealJclLine",
+          "when": "viewItem == mfJobDd",
+          "group": "inline@1"
+        },
+        {
+          "command": "mainframeFtps.openJobDataset",
+          "when": "viewItem == mfJobDd",
+          "group": "1@1"
+        },
+        {
+          "command": "mainframeFtps.revealJclLine",
+          "when": "viewItem =~ /^mfJob(Dd|Step)$/",
+          "group": "1@2"
+        },
+        {
+          "command": "mainframeFtps.copyJobDataset",
+          "when": "viewItem =~ /^mfJob(Dd|Member)$/",
+          "group": "2@1"
         }
       ],
       "editor/title": [
@@ -472,6 +528,18 @@
         },
         {
           "command": "mainframeFtps.newDatasetLike",
+          "when": "false"
+        },
+        {
+          "command": "mainframeFtps.openJobDataset",
+          "when": "false"
+        },
+        {
+          "command": "mainframeFtps.revealJclLine",
+          "when": "false"
+        },
+        {
+          "command": "mainframeFtps.copyJobDataset",
           "when": "false"
         }
       ]

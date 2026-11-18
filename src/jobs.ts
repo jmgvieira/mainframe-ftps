@@ -82,6 +82,9 @@ export function severity(job: Partial<JobInfo>): "ok" | "warn" | "error" | "runn
 export class JobsProvider implements vscode.TreeDataProvider<JobNode>, vscode.Disposable {
   private readonly _onDidChange = new vscode.EventEmitter<JobNode | undefined>();
   readonly onDidChangeTreeData = this._onDidChange.event;
+  private readonly _onDidFinish = new vscode.EventEmitter<JobInfo>();
+  /** Um job acompanhado terminou (passou a OUTPUT). */
+  readonly onDidFinish = this._onDidFinish.event;
   private jobs: JobInfo[];
   private pollers = new Map<string, NodeJS.Timeout>();
 
@@ -231,6 +234,7 @@ export class JobsProvider implements vscode.TreeDataProvider<JobNode>, vscode.Di
       }
       if (job.status === "OUTPUT") {
         this.stopPolling(job.jobId);
+        this._onDidFinish.fire(job);
         this.notifyFinished(job);
       }
     };
@@ -270,6 +274,7 @@ export class JobsProvider implements vscode.TreeDataProvider<JobNode>, vscode.Di
       this.stopPolling(id);
     }
     this._onDidChange.dispose();
+    this._onDidFinish.dispose();
   }
 }
 

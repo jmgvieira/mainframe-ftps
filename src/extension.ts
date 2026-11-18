@@ -6,6 +6,7 @@ import { JobsProvider, JobInfo, parseJobList, parseJobLine, severity } from "./j
 import { getConfig, initServers, servers, migrateLegacyHost } from "./config";
 import { DatasetsProvider } from "./datasets";
 import { registerBrowse } from "./browse";
+import { registerJobView } from "./jobview";
 import { encode, decode, unsupported } from "./codec";
 import { parseSpoolFiles, splitSpool, sections, formatSpool, documentSections } from "./spool";
 
@@ -223,6 +224,7 @@ export function activate(context: vscode.ExtensionContext) {
     cmd("mainframeFtps.showLog", async () => log.show()),
     datasets,
     ...registerBrowse({ context, session, targets, datasets, log, submit: submitJcl, cmd }),
+    ...registerJobView({ session, log, onJobFinished: jobs.onDidFinish, cmd }),
   );
 }
 

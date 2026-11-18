@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.6.0
+- New **In this job** view, at the top of the **Mainframe** side bar: the data sets used by the JCL open in the editor, grouped by step, one click away.
+  - Each line shows the data set name, the DD name and the DISP (`SHR`, `OLD`, `NEW`, `MOD`). Concatenated DDs are marked with `+`.
+  - Click a member (`LIB(MEMBER)`) or a sequential data set to open it in the editor. A library expands to show its members.
+  - The tooltip shows DSORG, RECFM, LRECL and BLKSIZE. Data sets that do not exist yet (for example, outputs of a job that has not run) appear greyed out as **not found**; they are checked again when a job ends, on **Refresh**, or when you click them.
+  - `JCLLIB` and `JOBLIB` appear in a **JOB** group. Symbols defined with `SET` (or as defaults of an in-stream `PROC`) are resolved; other symbols are marked **symbol not resolved**.
+  - Temporary data sets (`&&TEMP`), `SYSOUT`, `DUMMY`, `NULLFILE`, back references (`*.STEP.DD`) and in-stream data are left out.
+  - Relative GDG generations: `(0)` and `(-1)` open that generation; `(+1)` is shown as **new generation**.
+  - Members of load libraries (RECFM U) are listed but not opened.
+  - Clicking a step goes to its line in the JCL; right-click a data set for **Go to line in JCL** and **Copy name**.
+  - The view follows the active JCL. Opening another file from it (for example the Easytrieve in `SYSIN`) keeps the list of the JCL.
+
 ## 0.5.0
 - The whole interface is in English: commands, buttons, menus, tooltips, questions, messages, the spool summary and the log.
 - The old `mainframeFtps.host` setting is replaced by `mainframeFtps.hosts`. Its value is moved there automatically when the extension starts, and it no longer appears in the settings.

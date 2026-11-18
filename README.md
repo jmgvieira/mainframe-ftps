@@ -79,7 +79,7 @@ Example `settings.json`:
 
 ## Browsing data sets
 
-- The **Mainframe** icon in the activity bar (left) opens the **Data sets** and **Jobs** views.
+- The **Mainframe** icon in the activity bar (left) opens the **In this job**, **Data sets** and **Jobs** views.
 - **Add data set filter**, for example `U12345.*`, lists data sets as in ISPF 3.4.
   - A PDS expands to show its members.
   - Clicking a member or a sequential data set opens it in the editor. `Ctrl+S` saves it back to the mainframe.
@@ -90,6 +90,23 @@ Example `settings.json`:
   **New data set like this one…**, **Rename…**, **Delete…** (always with confirmation), **Submit** and **Copy name**.
 - Migrated data sets (HSM) show a cloud icon. Opening one starts the recall.
 - Names with national characters (`#`, `@`) are shown correctly, even with code page IBM-1147.
+
+## Data sets of the current job
+
+The **In this job** view, at the top of the **Mainframe** side bar, lists the data sets used by the JCL open in the editor, grouped by step:
+
+```text
+▾ STEP010   EXEC PGM=EZTPA00
+    U12345.EZT(EXTRAI)        SYSIN · SHR
+    PROD.CLIENTES.MESTRE      ENTRADA · SHR
+    U12345.TEST.EXTRACAO      SAIDA · NEW · not found
+```
+
+- Click a member or a sequential data set to open it; a library expands to show its members.
+- The tooltip shows DSORG, RECFM, LRECL and BLKSIZE. Data sets that do not exist yet are greyed out and checked again when a job ends.
+- Symbols defined with `SET` are resolved. Temporary data sets, `SYSOUT`, `DUMMY` and in-stream data are left out.
+- Clicking a step goes to its line in the JCL. Right-click a data set for **Go to line in JCL** and **Copy name**.
+- The list follows the active JCL and stays when you open another file from it.
 
 ## Saving to the mainframe
 
