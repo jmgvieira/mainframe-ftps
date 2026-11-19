@@ -626,7 +626,7 @@ export class FtpSession implements vscode.Disposable {
 
   /** Texto curto do estado, para as vistas. */
   get stateLabel(): string {
-    return this.isConnected ? `● ${this.userId}@${this.serverName}` : `○ disconnected${this.server ? ` · ${this.server}` : ""}`;
+    return this.isConnected ? `🟢 ${this.userId}@${this.serverName}` : `○ disconnected${this.server ? ` · ${this.server}` : ""}`;
   }
 
   dispose(): void {

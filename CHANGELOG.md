@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.6.4
+- The **Data sets** view shows a green dot (🟢) before the user and server when connected.
+
 ## 0.6.3
 - **In this job** no longer checks the catalog by itself. Some listings make the server reset the data connection, and that closes the whole session (a new token is needed). Use the new **Check data sets** button (✓✓) at the top of the view to see which data sets exist; the listings are spaced out. Clicking a data set still checks just that one.
 - **Refresh** only reads the JCL again.
