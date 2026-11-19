@@ -103,7 +103,7 @@ The **In this job** view, at the top of the **Mainframe** side bar, lists the da
 ```
 
 - Click a member or a sequential data set to open it; a library expands to show its members.
-- The tooltip shows DSORG, RECFM, LRECL and BLKSIZE. Data sets that do not exist yet are greyed out and checked again when a job ends.
+- **Check data sets** (✓✓ at the top of the view) looks them up in the catalog: the tooltip then shows DSORG, RECFM, LRECL and BLKSIZE, and data sets that do not exist yet are greyed out. The view does not check by itself.
 - Symbols defined with `SET` are resolved. Temporary data sets, `SYSOUT`, `DUMMY` and in-stream data are left out.
 - Clicking a step goes to its line in the JCL. Right-click a data set for **Go to line in JCL** and **Copy name**.
 - The list follows the active JCL and stays when you open another file from it.

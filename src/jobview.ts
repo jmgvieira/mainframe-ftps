@@ -47,7 +47,6 @@ export class JobDatasetsProvider implements vscode.TreeDataProvider<JobDsNode>, 
     this.doc = doc;
     this.info = doc ? parseJcl(doc.getText()) : undefined;
     this._onDidChange.fire(undefined);
-    void this.lookup();
   }
 
   /** Esquece os data sets que não existiam (podem ter sido criados entretanto). */
@@ -59,15 +58,20 @@ export class JobDatasetsProvider implements vscode.TreeDataProvider<JobDsNode>, 
     }
   }
 
-  refresh(all: boolean): void {
-    this.failed.clear();
-    if (all) {
-      this.attrs.clear();
-    } else {
-      this.forgetMissing();
-    }
+  /** Só redesenha a árvore (não faz pedidos ao mainframe). */
+  changed(): void {
     this._onDidChange.fire(undefined);
-    void this.lookup();
+  }
+
+  /**
+   * Verifica no catálogo os data sets do JCL. Só a pedido do utilizador: algumas
+   * listagens fazem o servidor cortar a ligação, e o basic-ftp fecha então a sessão.
+   */
+  async checkAll(): Promise<void> {
+    this.failed.clear();
+    this.attrs.clear();
+    this._onDidChange.fire(undefined);
+    await this.lookup();
   }
 
   attrsOf(base: string): DsInfo | null | undefined {
@@ -108,10 +112,15 @@ export class JobDatasetsProvider implements vscode.TreeDataProvider<JobDsNode>, 
             }
           }
         }
+        let first = true;
         for (const [base, gdg] of names) {
           if (!this.session.isConnected || this.recheck) {
             break;
           }
+          if (!first) {
+            await new Promise((r) => setTimeout(r, 400)); // não abrir ligações de dados seguidas
+          }
+          first = false;
           try {
             await this.fetch(base, gdg);
             this._onDidChange.fire(undefined);
@@ -213,6 +222,9 @@ export class JobDatasetsProvider implements vscode.TreeDataProvider<JobDsNode>, 
       }
     } else if (dd.member) {
       icon = "file-code";
+    }
+    if (a === undefined && !dd.unresolved && !note) {
+      note = "Not checked yet: click to open, or use **Check data sets** to see which ones exist.";
     }
     it.description = parts.join(" · ");
     it.iconPath = new vscode.ThemeIcon(
@@ -362,12 +374,11 @@ export function registerJobView(d: Deps): vscode.Disposable[] {
         updateTitle();
       }, 300);
     }),
-    session.onDidChangeState((up) => {
-      if (up) {
-        provider.refresh(false);
-      }
+    // um job terminado pode ter criado os que faltavam: deixam de aparecer como "not found"
+    d.onJobFinished(() => {
+      provider.forgetMissing();
+      provider.changed();
     }),
-    d.onJobFinished(() => provider.refresh(false)),
     { dispose: () => timer && clearTimeout(timer) },
 
     // Não obriga a ligar: sem ligação só volta a ler o JCL (ou limpa a lista se já foi fechado).
@@ -377,12 +388,20 @@ export function registerJobView(d: Deps): vscode.Disposable[] {
         follow(vscode.window.activeTextEditor);
         return;
       }
-      provider.refresh(true);
       provider.show(provider.doc);
       updateTitle();
-      if (!session.isConnected) {
-        vscode.window.setStatusBarMessage("$(plug) Connect to the mainframe to check which data sets exist", 4000);
+    }),
+
+    cmd("mainframeFtps.checkJobDatasets", async () => {
+      checkClosed();
+      if (!provider.doc) {
+        return;
       }
+      await session.ensureConnected();
+      await vscode.window.withProgress(
+        { location: { viewId: "mainframeFtps.jobDatasets" }, title: "Checking data sets" },
+        () => provider.checkAll()
+      );
     }),
 
     cmd("mainframeFtps.revealJclLine", async (arg: number | JobDsNode) => {
@@ -419,7 +438,7 @@ export function registerJobView(d: Deps): vscode.Disposable[] {
       let a = provider.attrsOf(dd.base);
       if (!a) {
         a = await provider.fetch(dd.base, !!dd.gdg, false); // clique do utilizador: pode perguntar se cair
-        provider.refresh(false);
+        provider.changed();
       }
       if (!a) {
         vscode.window.showWarningMessage(`${dd.base} does not exist (not found in the catalog).`);
@@ -427,7 +446,7 @@ export function registerJobView(d: Deps): vscode.Disposable[] {
       }
       if (a.dsorg.startsWith("PO")) {
         // biblioteca sem membro: a lista passa a mostrá-la expansível
-        provider.refresh(false);
+        provider.changed();
         vscode.window.setStatusBarMessage(`$(library) ${dd.base} is a library: expand it to see the members`, 4000);
         return;
       }

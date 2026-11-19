@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.3
+- **In this job** no longer checks the catalog by itself. Some listings make the server reset the data connection, and that closes the whole session (a new token is needed). Use the new **Check data sets** button (✓✓) at the top of the view to see which data sets exist; the listings are spaced out. Clicking a data set still checks just that one.
+- **Refresh** only reads the JCL again.
+
 ## 0.6.2
 - A failure in the data connection only (for example `ECONNRESET (data socket)` while listing) no longer drops the whole session: the extension checks the session with `NOOP` and retries the operation once.
 - The checks made by **In this job** never ask to reconnect. If one data set cannot be checked, the others are still checked; it is tried again on **Refresh**.
