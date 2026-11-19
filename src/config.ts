@@ -15,6 +15,8 @@ export interface MfConfig {
   timeoutSeconds: number;
   siteCommands: string[];
   autoUploadOnSave: boolean;
+  /** Pedir confirmação antes de cada gravação no mainframe. */
+  confirmUpload: boolean;
   fileExtensions: string[];
   transferEncoding: TransferEncoding;
   hostCodePage: string;
@@ -136,6 +138,7 @@ export function getConfig(): MfConfig {
     timeoutSeconds: c.get("timeoutSeconds", 30),
     siteCommands: c.get("siteCommands", []),
     autoUploadOnSave: c.get("autoUploadOnSave", true),
+    confirmUpload: c.get("confirmUpload", true),
     fileExtensions: c.get("fileExtensions", [".jcl", ".ezt", ".cbl", ".cpy", ".proc"]).map((e) => e.toLowerCase()),
     transferEncoding: c.get<TransferEncoding>("transferEncoding", "iso8859-15"),
     hostCodePage: c.get("hostCodePage", "IBM-1147"),

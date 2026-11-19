@@ -3,7 +3,7 @@ import * as path from "path";
 import { FtpSession, CancelledError, errText } from "./session";
 import { TargetMap, IGNORE, validateDsn, validateMember, suggestMember, pdsOf, memberOf } from "./mapping";
 import { JobsProvider, JobInfo, parseJobList, parseJobLine, severity } from "./jobs";
-import { getConfig, initServers, servers, migrateLegacyHost } from "./config";
+import { getConfig, initServers, servers, migrateLegacyHost, activeServer } from "./config";
 import { DatasetsProvider } from "./datasets";
 import { registerBrowse } from "./browse";
 import { registerJobView } from "./jobview";
@@ -376,6 +376,21 @@ async function onSave(doc: vscode.TextDocument): Promise<void> {
 async function upload(doc: vscode.TextDocument, target: string): Promise<void> {
   if (await checkServer(doc, "save")) {
     await targets.set(doc.uri, target); // passa a pertencer ao servidor atual
+  }
+  if (getConfig().confirmUpload) {
+    const server = activeServer()?.name ?? getConfig().host;
+    const ok = await vscode.window.showWarningMessage(
+      `Save ${path.basename(doc.fileName)} to the mainframe?`,
+      {
+        modal: true,
+        detail: `${target}\non ${server}\n\nThe file is already saved on this PC. Cancel keeps it only here.\n(Setting: mainframeFtps.confirmUpload)`,
+      },
+      "Save to mainframe"
+    );
+    if (ok !== "Save to mainframe") {
+      log.appendLine(`Not saved to ${target}: cancelled by the user.`);
+      throw new CancelledError();
+    }
   }
   const data = await prepareText(doc, "save");
   log.appendLine(`Saving ${path.basename(doc.fileName)} to ${target} (${data.length} bytes)`);

@@ -114,6 +114,7 @@ The **In this job** view, at the top of the **Mainframe** side bar, lists the da
 - For other files, on the **first save** of a `.jcl`, `.ezt`, `.cbl`, `.cpy` or `.proc`, the extension asks
   for the destination: library (e.g. `U12345.JCL.LIB`) and member (it suggests the file name).
   You can also answer **Never for this file**.
+- Before each save to the mainframe, a confirmation shows the data set and the server. **Cancel** keeps the file only on the PC. Turn it off with `mainframeFtps.confirmUpload`.
 - **Mainframe: Change file destination (PDS/member)** changes the destination.
 - **Mainframe: Save file to mainframe** saves any file to the mainframe on demand.
 - **Mainframe: Open mainframe member…** lists the members of a PDS, downloads one and associates it.

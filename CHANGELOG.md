@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.6.7
+- Every save to the mainframe (`Ctrl+S` or **Save file to mainframe**) first asks for confirmation, showing the data set and the server. Cancel keeps the file saved only on the PC. Turn it off with the new `mainframeFtps.confirmUpload` setting.
+
 ## 0.6.6
 - **In this job** no longer looks data sets up in the catalog: the **Check data sets** button is gone. On the company server some catalog listings made the session drop.
 - Clicking a data set opens it directly. If it is a library, a list of its members appears to choose one (and the library can then be expanded in the view). This check uses only the control connection (`CWD`), not a listing.

@@ -2,7 +2,7 @@
   "name": "mainframe-ftps",
   "displayName": "Mainframe FTPS (z/OS)",
   "description": "Browse z/OS data sets, edit members with automatic save to the PDS, submit jobs and view the spool, over a single FTPS session with keepalive and PIN + token login.",
-  "version": "0.6.6",
+  "version": "0.6.7",
   "publisher": "JorgeMiguel",
   "license": "MIT",
   "icon": "icon.png",
@@ -665,6 +665,12 @@
           "default": true,
           "order": 13,
           "description": "Save to the mainframe every time the file is saved."
+        },
+        "mainframeFtps.confirmUpload": {
+          "type": "boolean",
+          "default": true,
+          "order": 13,
+          "description": "Ask for confirmation before every save to the mainframe (Ctrl+S or Save file to mainframe). If you answer no, the file is only saved on the PC."
         },
         "mainframeFtps.fileExtensions": {
           "type": "array",
