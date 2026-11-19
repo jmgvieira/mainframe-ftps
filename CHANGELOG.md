@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.6.5
+- **Check data sets** looks each data set up with a wildcard (`NAME*`), like the Data sets view, instead of the exact name. Listing the exact name of some data sets made the server reset the connection and closed the session.
+
 ## 0.6.4
 - The **Data sets** view shows a green dot (🟢) before the user and server when connected.
 

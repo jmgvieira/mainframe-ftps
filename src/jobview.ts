@@ -19,6 +19,13 @@ interface Deps {
   cmd: (id: string, fn: (...args: any[]) => Promise<unknown>) => vscode.Disposable;
 }
 
+/** INFO.EXPORT.FILE → INFO.EXPORT.FILE*; com 8 caracteres no último qualificador, troca o último por *. */
+export function wildcardFor(dsn: string): string {
+  const dot = dsn.lastIndexOf(".");
+  const q = dsn.slice(dot + 1);
+  return dsn.slice(0, dot + 1) + (q.length < 8 ? q : q.slice(0, 7)) + "*";
+}
+
 /** O documento parece JCL: linguagem, extensão ou um cartão JOB/EXEC no início. */
 export function looksLikeJcl(doc: vscode.TextDocument): boolean {
   if (/jcl/i.test(doc.languageId) || /\.jcl$/i.test(doc.uri.path)) {
@@ -80,7 +87,9 @@ export class JobDatasetsProvider implements vscode.TreeDataProvider<JobDsNode>, 
 
   /** Procura um data set no catálogo (pela ligação aberta). */
   async fetch(base: string, gdg = false, quiet = true): Promise<DsInfo | null> {
-    const { raw, cwd } = await this.session.listDatasetsRaw(base, quiet);
+    // Lista com asterisco, como a vista Data sets: o LIST do nome exato de alguns
+    // data sets faz o servidor cortar a ligação de dados (e o basic-ftp fecha a sessão).
+    const { raw, cwd } = await this.session.listDatasetsRaw(wildcardFor(base), quiet);
     let found = parseDatasetList(raw, cwd).find((d) => d.name === base) ?? null;
     if (!found && gdg) {
       // base de um GDG: não aparece na listagem, as gerações sim (BASE.G0001V00)
