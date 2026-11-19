@@ -273,6 +273,14 @@ export class JobDatasetsProvider implements vscode.TreeDataProvider<JobDsNode>, 
   }
 }
 
+/** O documento ainda tem um separador aberto (o VS Code só fecha o documento minutos depois). */
+function openInTab(doc: vscode.TextDocument): boolean {
+  const uri = doc.uri.toString();
+  return vscode.window.tabGroups.all.some((g) =>
+    g.tabs.some((t) => t.input instanceof vscode.TabInputText && t.input.uri.toString() === uri)
+  );
+}
+
 export function registerJobView(d: Deps): vscode.Disposable[] {
   const { session, cmd } = d;
   const provider = new JobDatasetsProvider(session, d.log);
@@ -306,12 +314,22 @@ export function registerJobView(d: Deps): vscode.Disposable[] {
   };
   follow(vscode.window.activeTextEditor);
 
+  /** Limpa a lista quando o separador do JCL é fechado. */
+  const checkClosed = () => {
+    if (provider.doc && !openInTab(provider.doc)) {
+      provider.show(undefined);
+      updateTitle();
+      follow(vscode.window.activeTextEditor); // outro JCL que tenha ficado ativo
+    }
+  };
+
   let timer: NodeJS.Timeout | undefined;
 
   return [
     view,
     provider,
     vscode.window.onDidChangeActiveTextEditor(follow),
+    vscode.window.tabGroups.onDidChangeTabs(checkClosed),
     vscode.workspace.onDidChangeTextDocument((e) => {
       if (e.document !== provider.doc) {
         return;
@@ -347,11 +365,19 @@ export function registerJobView(d: Deps): vscode.Disposable[] {
     d.onJobFinished(() => provider.refresh(false)),
     { dispose: () => timer && clearTimeout(timer) },
 
+    // Não obriga a ligar: sem ligação só volta a ler o JCL (ou limpa a lista se já foi fechado).
     cmd("mainframeFtps.refreshJobDatasets", async () => {
-      if (!session.isConnected) {
-        await session.ensureConnected();
+      checkClosed();
+      if (!provider.doc) {
+        follow(vscode.window.activeTextEditor);
+        return;
       }
       provider.refresh(true);
+      provider.show(provider.doc);
+      updateTitle();
+      if (!session.isConnected) {
+        vscode.window.setStatusBarMessage("$(plug) Connect to the mainframe to check which data sets exist", 4000);
+      }
     }),
 
     cmd("mainframeFtps.revealJclLine", async (arg: number | JobDsNode) => {

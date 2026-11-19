@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.1
+- **In this job** is cleared as soon as the JCL tab is closed (it used to wait until VS Code released the file, which could take minutes).
+- **Refresh** in **In this job** no longer asks for PIN + token: without a connection it only reads the JCL again. Connect to check which data sets exist.
+
 ## 0.6.0
 - New **In this job** view, at the top of the **Mainframe** side bar: the data sets used by the JCL open in the editor, grouped by step, one click away.
   - Each line shows the data set name, the DD name and the DISP (`SHR`, `OLD`, `NEW`, `MOD`). Concatenated DDs are marked with `+`.
