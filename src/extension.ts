@@ -7,7 +7,7 @@ import { getConfig, initServers, servers, migrateLegacyHost, activeServer } from
 import { DatasetsProvider } from "./datasets";
 import { registerBrowse } from "./browse";
 import { registerJobView } from "./jobview";
-import { encode, decode, unsupported } from "./codec";
+import { encode, decode, unsupported, localBytes, doubleEncoded } from "./codec";
 import { parseSpoolFiles, splitSpool, sections, formatSpool, documentSections } from "./spool";
 
 let session: FtpSession;
@@ -425,6 +425,21 @@ async function prepareText(doc: vscode.TextDocument, action: string): Promise<Bu
   }
 
   const text = lines.join("\r\n") + "\r\n";
+  const mangled = doubleEncoded(text);
+  if (mangled.length) {
+    const ok = await vscode.window.showWarningMessage(
+      `The file looks badly decoded: it has ${mangled.map((x) => `"${x}"`).join(", ")}, ` +
+        "which usually means a UTF-8 file opened as ISO 8859-1 (for example £ shown as Â£). Sending it would damage the data set.",
+      {
+        modal: true,
+        detail: "Close the file and open it again from the Mainframe view, or use \"Reopen with Encoding\" → UTF-8 in the status bar.",
+      },
+      `${capitalize(action)} anyway`
+    );
+    if (!ok) {
+      throw new CancelledError();
+    }
+  }
   const bad = unsupported(text, cfg.transferEncoding);
   if (bad.length) {
     const ok = await vscode.window.showWarningMessage(
@@ -508,7 +523,7 @@ async function openMember(_context: vscode.ExtensionContext): Promise<void> {
   }
   const buf = await session.downloadText(target);
   const text = decode(buf, getConfig().transferEncoding).replace(/\r\n/g, "\n");
-  await vscode.workspace.fs.writeFile(dest, Buffer.from(text, "utf8"));
+  await vscode.workspace.fs.writeFile(dest, localBytes(text));
   await targets.set(dest, target);
   await vscode.window.showTextDocument(dest);
   vscode.window.setStatusBarMessage(`$(cloud-download) ${target} opened (associated with this file)`, 5000);

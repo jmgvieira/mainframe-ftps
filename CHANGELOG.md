@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.9
+- Local copies are written as UTF-8 **with BOM** and opened as UTF-8, so `£`, `€` and accented letters show correctly even when VS Code is set to another encoding (`files.encoding` = ISO 8859-1 showed `£` as `Â£`).
+- Before saving to the mainframe, the extension warns if the text looks badly decoded (`Â£`, `Ã©`…), which would damage the data set.
+
 ## 0.6.8
 - Fix for `534 TLS negotiation failed -- data connection closed` and `ECONNRESET (data socket)`, which closed the session when listing, opening, saving or creating data sets. z/OS requires every data connection to resume the TLS session of the control connection; the FTP library was replacing it with the session of the previous data connection. The session is now kept, and TLS is limited to 1.2 (new setting `mainframeFtps.tlsMaxVersion`).
 - The log shows the TLS version and cipher after connecting.

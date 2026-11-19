@@ -71,3 +71,23 @@ export function unsupported(text: string, enc: TransferEncoding): string[] {
   }
   return [...bad];
 }
+
+/**
+ * Bytes da cópia local: UTF-8 com BOM. O BOM faz o VS Code abrir sempre em UTF-8,
+ * mesmo com files.encoding noutro código (com ISO 8859-1, o £ aparecia como "Â£").
+ */
+export function localBytes(text: string): Uint8Array {
+  return Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(text, "utf8")]);
+}
+
+/** Pedaços de texto UTF-8 lido como Latin-1 ("Â£", "Ã©"…), que estragariam o membro no mainframe. */
+export function doubleEncoded(text: string): string[] {
+  const found = new Set<string>();
+  for (const m of text.matchAll(/[ÂÃ][\u0080-\u00BF]|ï»¿/g)) {
+    found.add(m[0]);
+    if (found.size >= 5) {
+      break;
+    }
+  }
+  return [...found];
+}

@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import { FtpSession, CancelledError, errText, AllocOptions } from "./session";
 import { DatasetsProvider, MfNode, DsInfo } from "./datasets";
 import { TargetMap, IGNORE, validateDsn, validateMember, pdsOf, memberOf, localBase, targetFromPath } from "./mapping";
-import { decode } from "./codec";
+import { decode, localBytes } from "./codec";
 import { getConfig } from "./config";
 
 const ASKED_KEY = "mainframeFtps.localFolderAsked";
@@ -159,12 +159,12 @@ export function registerBrowse(d: Deps): vscode.Disposable[] {
     );
     const text = decode(buf, getConfig().transferEncoding).replace(/\r\n/g, "\n");
     await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(uri, ".."));
-    await vscode.workspace.fs.writeFile(uri, Buffer.from(text, "utf8"));
+    await vscode.workspace.fs.writeFile(uri, localBytes(text));
     await targets.set(uri, target);
     d.log.appendLine(`Opened ${target} in ${uri.fsPath}`);
-    let doc = await vscode.workspace.openTextDocument(uri);
+    let doc = await openUtf8(uri);
     await applyLanguage(doc, target);
-    doc = await vscode.workspace.openTextDocument(uri);
+    doc = await openUtf8(uri);
     await vscode.window.showTextDocument(doc, { preview: false });
     if (revert) {
       await vscode.commands.executeCommand("workbench.action.files.revert");
@@ -336,10 +336,10 @@ export function registerBrowse(d: Deps): vscode.Disposable[] {
         /* não existe */
       }
       if (!exists) {
-        await vscode.workspace.fs.writeFile(uri, new Uint8Array());
+        await vscode.workspace.fs.writeFile(uri, localBytes(""));
       }
       await targets.set(uri, target);
-      const doc = await vscode.workspace.openTextDocument(uri);
+      const doc = await openUtf8(uri);
       await applyLanguage(doc, target);
       await vscode.window.showTextDocument(doc, { preview: false });
       vscode.window.showInformationMessage(`${target} will be created on the mainframe when you save (Ctrl+S).`);
@@ -522,3 +522,11 @@ function fakeDs(name: string, dsorg: string): DsInfo {
   return { name, dsorg, recfm: "", lrecl: 0, blksize: 0, volume: "", referred: "", migrated: false };
 }
 
+
+/** Abre o ficheiro em UTF-8 (opção encoding do VS Code 1.100+; versões antigas ignoram-na e usam o BOM). */
+export function openUtf8(uri: vscode.Uri): Thenable<vscode.TextDocument> {
+  return (vscode.workspace.openTextDocument as (u: vscode.Uri, o?: { encoding: string }) => Thenable<vscode.TextDocument>)(
+    uri,
+    { encoding: "utf8bom" }
+  );
+}
