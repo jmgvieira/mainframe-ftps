@@ -1,3 +1,4 @@
+import * as tls from "tls";
 import * as vscode from "vscode";
 import { Client, FTPError } from "basic-ftp";
 import { Readable, Writable } from "stream";
@@ -131,8 +132,15 @@ export class FtpSession implements vscode.Disposable {
         secureOptions: {
           rejectUnauthorized: cfg.rejectUnauthorized,
           servername: cfg.tlsServerName || undefined,
+          // Com TLS 1.3 a retoma de sessão nas ligações de dados falha no z/OS (534 / ECONNRESET).
+          maxVersion: cfg.tlsMaxVersion === "TLSv1.3" ? "TLSv1.3" : "TLSv1.2",
         },
       });
+      pinControlSession(client);
+      const ctl = client.ftp.socket as tls.TLSSocket;
+      if (typeof ctl.getProtocol === "function") {
+        this.log.appendLine(`  TLS ${ctl.getProtocol() ?? "?"} · ${ctl.getCipher()?.name ?? "?"}`);
+      }
       if (cfg.hostCodePage) {
         await this.sendLogged(client, `SITE SBDATACONN=(${cfg.hostCodePage},${zosName(cfg.transferEncoding)})`);
       }
@@ -711,6 +719,26 @@ async function rawList(c: Client, command: string): Promise<string> {
 export function quoteDsn(dsn: string): string {
   const d = dsn.trim().replace(/^'+|'+$/g, "");
   return `'${d.toUpperCase()}'`;
+}
+
+/**
+ * As ligações de dados do z/OS têm de retomar a sessão TLS da ligação de controlo.
+ * O basic-ftp guarda a sessão de cada ligação de dados por cima dessa (FtpContext.tlsSessionStore),
+ * e a ligação seguinte é recusada. Aqui a sessão fica sempre a da ligação de controlo.
+ */
+function pinControlSession(client: Client): void {
+  const ftp = client.ftp as any;
+  const control = ftp.socket as tls.TLSSocket;
+  if (typeof control.getSession !== "function") {
+    return;
+  }
+  let session: Buffer | undefined = control.getSession();
+  control.on("session", (s: Buffer) => (session = s));
+  Object.defineProperty(ftp, "tlsSessionStore", {
+    configurable: true,
+    get: () => session,
+    set: () => undefined, // ignora as sessões das ligações de dados
+  });
 }
 
 /** Erro só na ligação de dados (listagem/transferência); a sessão pode continuar viva. */

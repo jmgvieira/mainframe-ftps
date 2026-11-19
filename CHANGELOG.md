@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.8
+- Fix for `534 TLS negotiation failed -- data connection closed` and `ECONNRESET (data socket)`, which closed the session when listing, opening, saving or creating data sets. z/OS requires every data connection to resume the TLS session of the control connection; the FTP library was replacing it with the session of the previous data connection. The session is now kept, and TLS is limited to 1.2 (new setting `mainframeFtps.tlsMaxVersion`).
+- The log shows the TLS version and cipher after connecting.
+
 ## 0.6.7
 - Every save to the mainframe (`Ctrl+S` or **Save file to mainframe**) first asks for confirmation, showing the data set and the server. Cancel keeps the file saved only on the PC. Turn it off with the new `mainframeFtps.confirmUpload` setting.
 
