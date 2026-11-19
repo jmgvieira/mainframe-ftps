@@ -2,7 +2,7 @@
   "name": "mainframe-ftps",
   "displayName": "Mainframe FTPS (z/OS)",
   "description": "Browse z/OS data sets, edit members with automatic save to the PDS, submit jobs and view the spool, over a single FTPS session with keepalive and PIN + token login.",
-  "version": "0.6.5",
+  "version": "0.6.6",
   "publisher": "JorgeMiguel",
   "license": "MIT",
   "icon": "icon.png",
@@ -211,12 +211,6 @@
         "icon": "$(folder)"
       },
       {
-        "command": "mainframeFtps.checkJobDatasets",
-        "title": "Check data sets",
-        "category": "Mainframe",
-        "icon": "$(check-all)"
-      },
-      {
         "command": "mainframeFtps.refreshJobDatasets",
         "title": "Refresh",
         "category": "Mainframe",
@@ -338,11 +332,6 @@
           "command": "mainframeFtps.openLocalFolder",
           "when": "view == mainframeFtps.datasets",
           "group": "9_folder@2"
-        },
-        {
-          "command": "mainframeFtps.checkJobDatasets",
-          "when": "view == mainframeFtps.jobDatasets",
-          "group": "navigation@0"
         },
         {
           "command": "mainframeFtps.refreshJobDatasets",

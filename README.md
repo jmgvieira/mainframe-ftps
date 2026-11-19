@@ -99,11 +99,11 @@ The **In this job** view, at the top of the **Mainframe** side bar, lists the da
 ▾ STEP010   EXEC PGM=EZTPA00
     U12345.EZT(EXTRAI)        SYSIN · SHR
     PROD.CLIENTES.MESTRE      ENTRADA · SHR
-    U12345.TEST.EXTRACAO      SAIDA · NEW · not found
+    U12345.TEST.EXTRACAO      SAIDA · NEW
 ```
 
-- Click a member or a sequential data set to open it; a library expands to show its members.
-- **Check data sets** (✓✓ at the top of the view) looks them up in the catalog: the tooltip then shows DSORG, RECFM, LRECL and BLKSIZE, and data sets that do not exist yet are greyed out. The view does not check by itself.
+- Click a member or a sequential data set to open it.
+- The view does not look data sets up in the catalog. Clicking a library shows its members to choose one.
 - Symbols defined with `SET` are resolved. Temporary data sets, `SYSOUT`, `DUMMY` and in-stream data are left out.
 - Clicking a step goes to its line in the JCL. Right-click a data set for **Go to line in JCL** and **Copy name**.
 - The list follows the active JCL and stays when you open another file from it.

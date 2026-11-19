@@ -224,7 +224,7 @@ export function activate(context: vscode.ExtensionContext) {
     cmd("mainframeFtps.showLog", async () => log.show()),
     datasets,
     ...registerBrowse({ context, session, targets, datasets, log, submit: submitJcl, cmd }),
-    ...registerJobView({ session, log, onJobFinished: jobs.onDidFinish, cmd }),
+    ...registerJobView({ session, log, cmd }),
   );
 }
 

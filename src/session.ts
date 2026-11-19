@@ -388,6 +388,27 @@ export class FtpSession implements vscode.Disposable {
   }
 
   /**
+   * Diz se um data set é uma biblioteca (PDS/PDSE) sem abrir ligação de dados:
+   * o CWD para um PDS responde "... is a partitioned data set".
+   */
+  async isPartitioned(dsn: string): Promise<boolean> {
+    return this.run(`check ${dsn}`, async (c) => {
+      try {
+        const res = await c.cd(quoteDsn(dsn));
+        this.log.appendLine(`  > CWD ${quoteDsn(dsn)}  < ${res.code} ${firstLine(res.message)}`);
+        return /partitioned/i.test(res.message);
+      } catch (err) {
+        if (err instanceof FTPError) {
+          return false;
+        }
+        throw err;
+      } finally {
+        await this.cdHome(c);
+      }
+    });
+  }
+
+  /**
    * Listagem MVS de data sets (como o ISPF 3.4). Devolve o texto em bruto e o
    * diretório de trabalho usado, para completar nomes relativos.
    */

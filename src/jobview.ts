@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { FtpSession, CancelledError, errText } from "./session";
-import { DsInfo, MfNode, parseDatasetList, parseMemberList } from "./datasets";
+import { DsInfo, MfNode, parseMemberList } from "./datasets";
 import { parseJcl, JclInfo, JclStep, JclDd } from "./jcl";
 
 // Vista "In this job": data sets referidos no JCL ativo, agrupados por step.
@@ -14,16 +14,12 @@ type JobDsNode =
 interface Deps {
   session: FtpSession;
   log: vscode.OutputChannel;
-  /** Evento de fim de job (para voltar a ver que data sets já existem). */
-  onJobFinished: vscode.Event<unknown>;
   cmd: (id: string, fn: (...args: any[]) => Promise<unknown>) => vscode.Disposable;
 }
 
-/** INFO.EXPORT.FILE → INFO.EXPORT.FILE*; com 8 caracteres no último qualificador, troca o último por *. */
-export function wildcardFor(dsn: string): string {
-  const dot = dsn.lastIndexOf(".");
-  const q = dsn.slice(dot + 1);
-  return dsn.slice(0, dot + 1) + (q.length < 8 ? q : q.slice(0, 7)) + "*";
+/** Bibliotecas de load modules pelo nome (sem LIST não se sabe o RECFM). */
+export function isLoadLibrary(dsn: string): boolean {
+  return /\.(LOAD\w*|LINKLIB|LNKLIB)$/i.test(dsn);
 }
 
 /** O documento parece JCL: linguagem, extensão ou um cartão JOB/EXEC no início. */
@@ -41,12 +37,8 @@ export class JobDatasetsProvider implements vscode.TreeDataProvider<JobDsNode>, 
 
   doc: vscode.TextDocument | undefined;
   info: JclInfo | undefined;
-  /** Atributos por data set: DsInfo, null = não existe, ausente = por verificar. */
-  private attrs = new Map<string, DsInfo | null>();
-  /** Data sets cuja verificação falhou (não se repete até ao Refresh). */
-  private failed = new Set<string>();
-  private checking = false;
-  private recheck = false;
+  /** Data sets que já se sabe serem bibliotecas (depois de um clique). */
+  private libs = new Set<string>();
 
   constructor(private readonly session: FtpSession, private readonly log: vscode.OutputChannel) {}
 
@@ -56,96 +48,14 @@ export class JobDatasetsProvider implements vscode.TreeDataProvider<JobDsNode>, 
     this._onDidChange.fire(undefined);
   }
 
-  /** Esquece os data sets que não existiam (podem ter sido criados entretanto). */
-  forgetMissing(): void {
-    for (const [k, v] of this.attrs) {
-      if (v === null) {
-        this.attrs.delete(k);
-      }
-    }
-  }
-
   /** Só redesenha a árvore (não faz pedidos ao mainframe). */
   changed(): void {
     this._onDidChange.fire(undefined);
   }
 
-  /**
-   * Verifica no catálogo os data sets do JCL. Só a pedido do utilizador: algumas
-   * listagens fazem o servidor cortar a ligação, e o basic-ftp fecha então a sessão.
-   */
-  async checkAll(): Promise<void> {
-    this.failed.clear();
-    this.attrs.clear();
+  markLibrary(base: string): void {
+    this.libs.add(base);
     this._onDidChange.fire(undefined);
-    await this.lookup();
-  }
-
-  attrsOf(base: string): DsInfo | null | undefined {
-    return this.attrs.get(base);
-  }
-
-  /** Procura um data set no catálogo (pela ligação aberta). */
-  async fetch(base: string, gdg = false, quiet = true): Promise<DsInfo | null> {
-    // Lista com asterisco, como a vista Data sets: o LIST do nome exato de alguns
-    // data sets faz o servidor cortar a ligação de dados (e o basic-ftp fecha a sessão).
-    const { raw, cwd } = await this.session.listDatasetsRaw(wildcardFor(base), quiet);
-    let found = parseDatasetList(raw, cwd).find((d) => d.name === base) ?? null;
-    if (!found && gdg) {
-      // base de um GDG: não aparece na listagem, as gerações sim (BASE.G0001V00)
-      const g = await this.session.listDatasetsRaw(`${base}.G*`, quiet);
-      const gens = parseDatasetList(g.raw, g.cwd).filter((d) => /\.G\d{4}V\d{2}$/.test(d.name));
-      if (gens.length) {
-        found = { ...gens[gens.length - 1], name: base };
-      }
-    }
-    this.attrs.set(base, found);
-    return found;
-  }
-
-  /** Verifica, um a um, os data sets ainda sem atributos. Só com a ligação aberta. */
-  private async lookup(): Promise<void> {
-    if (this.checking) {
-      this.recheck = true;
-      return;
-    }
-    this.checking = true;
-    try {
-      do {
-        this.recheck = false;
-        const names = new Map<string, boolean>(); // nome → é GDG
-        for (const s of this.info?.steps ?? []) {
-          for (const dd of s.dds) {
-            if (!dd.unresolved && !this.attrs.has(dd.base) && !this.failed.has(dd.base)) {
-              names.set(dd.base, names.get(dd.base) || !!dd.gdg);
-            }
-          }
-        }
-        let first = true;
-        for (const [base, gdg] of names) {
-          if (!this.session.isConnected || this.recheck) {
-            break;
-          }
-          if (!first) {
-            await new Promise((r) => setTimeout(r, 400)); // não abrir ligações de dados seguidas
-          }
-          first = false;
-          try {
-            await this.fetch(base, gdg);
-            this._onDidChange.fire(undefined);
-          } catch (err) {
-            if (err instanceof CancelledError || !this.session.isConnected) {
-              break;
-            }
-            // falhou só este: passa ao seguinte
-            this.failed.add(base);
-            this.log.appendLine(`Could not check ${base}: ${errText(err)}`);
-          }
-        }
-      } while (this.recheck && this.session.isConnected);
-    } finally {
-      this.checking = false;
-    }
   }
 
   getTreeItem(node: JobDsNode): vscode.TreeItem {
@@ -189,15 +99,14 @@ export class JobDatasetsProvider implements vscode.TreeDataProvider<JobDsNode>, 
 
   private ddItem(node: { dd: JclDd; id: string }): vscode.TreeItem {
     const dd = node.dd;
-    const a = dd.unresolved ? undefined : this.attrs.get(dd.base);
-    const isLib = !!a && a.dsorg.startsWith("PO") && !dd.member;
+    const isLib = !dd.member && this.libs.has(dd.base);
     const it = new vscode.TreeItem(
       dd.dsn,
       isLib ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None
     );
     it.id = node.id;
     const parts = [dd.concat ? `${dd.ddName} +` : dd.ddName, dd.disp];
-    let icon = "file";
+    let icon = dd.member ? "file-code" : isLib ? "library" : "file";
     let note = "";
     let openable = true;
     if (dd.unresolved) {
@@ -210,48 +119,16 @@ export class JobDatasetsProvider implements vscode.TreeDataProvider<JobDsNode>, 
       parts.push("new generation");
       note = `Generation ${dd.gdg} is created by the job.`;
       openable = false;
-    } else if (a === null) {
-      icon = "circle-slash";
-      parts.push("not found");
-      note = "Not found in the catalog. Click to check again.";
-    } else if (a) {
-      if (a.migrated) {
-        icon = "cloud";
-        parts.push("migrated");
-      } else if (dd.member) {
-        icon = "file-code";
-      } else if (isLib) {
-        icon = "library";
-      } else if (a.dsorg.startsWith("PS")) {
-        icon = "file-text";
-      } else if (a.dsorg === "VS") {
-        icon = "database";
-        openable = false;
-        note = "VSAM files cannot be opened over FTP.";
-      }
-    } else if (dd.member) {
-      icon = "file-code";
-    }
-    if (a === undefined && !dd.unresolved && !note) {
-      note = "Not checked yet: click to open, or use **Check data sets** to see which ones exist.";
+    } else if (isLib) {
+      note = "Library: expand it to see the members.";
+    } else {
+      note = "Click to open.";
     }
     it.description = parts.join(" · ");
-    it.iconPath = new vscode.ThemeIcon(
-      icon,
-      a === null || dd.unresolved ? new vscode.ThemeColor("disabledForeground") : undefined
-    );
+    it.iconPath = new vscode.ThemeIcon(icon, dd.unresolved ? new vscode.ThemeColor("disabledForeground") : undefined);
     const md = new vscode.MarkdownString(`**${dd.dsn}**\n\n`);
     md.appendMarkdown(`DD ${dd.ddName}${dd.concat ? " (concatenation)" : ""} · DISP=${dd.disp} · line ${dd.line + 1}`);
-    if (a) {
-      md.appendMarkdown(
-        a.migrated
-          ? "\n\nMigrated (HSM). Opening it starts a recall."
-          : `\n\nDSORG ${a.dsorg} · RECFM ${a.recfm || "?"} · LRECL ${a.lrecl || "?"} · BLKSIZE ${a.blksize || "?"}`
-      );
-    }
-    if (note) {
-      md.appendMarkdown(`\n\n${note}`);
-    }
+    md.appendMarkdown(`\n\n${note}`);
     it.tooltip = md;
     it.contextValue = "mfJobDd";
     if (openable && !isLib) {
@@ -276,7 +153,7 @@ export class JobDatasetsProvider implements vscode.TreeDataProvider<JobDsNode>, 
     if (node.kind === "dd") {
       try {
         const list = parseMemberList(await this.session.listMembersRaw(node.dd.base), node.dd.base);
-        const load = /^U/i.test(this.attrs.get(node.dd.base)?.recfm ?? "");
+        const load = isLoadLibrary(node.dd.base);
         return list.length
           ? list.map((m) => ({ kind: "member", pds: m.pds, name: m.name, load }))
           : [{ kind: "message", text: "Empty PDS" }];
@@ -332,9 +209,6 @@ export function registerJobView(d: Deps): vscode.Disposable[] {
     if (!doc || doc.uri.scheme === "output" || !looksLikeJcl(doc)) {
       return;
     }
-    if (provider.doc?.uri.toString() !== doc.uri.toString()) {
-      provider.forgetMissing();
-    }
     provider.show(doc);
     updateTitle();
   };
@@ -383,11 +257,6 @@ export function registerJobView(d: Deps): vscode.Disposable[] {
         updateTitle();
       }, 300);
     }),
-    // um job terminado pode ter criado os que faltavam: deixam de aparecer como "not found"
-    d.onJobFinished(() => {
-      provider.forgetMissing();
-      provider.changed();
-    }),
     { dispose: () => timer && clearTimeout(timer) },
 
     // Não obriga a ligar: sem ligação só volta a ler o JCL (ou limpa a lista se já foi fechado).
@@ -399,18 +268,6 @@ export function registerJobView(d: Deps): vscode.Disposable[] {
       }
       provider.show(provider.doc);
       updateTitle();
-    }),
-
-    cmd("mainframeFtps.checkJobDatasets", async () => {
-      checkClosed();
-      if (!provider.doc) {
-        return;
-      }
-      await session.ensureConnected();
-      await vscode.window.withProgress(
-        { location: { viewId: "mainframeFtps.jobDatasets" }, title: "Checking data sets" },
-        () => provider.checkAll()
-      );
     }),
 
     cmd("mainframeFtps.revealJclLine", async (arg: number | JobDsNode) => {
@@ -433,6 +290,8 @@ export function registerJobView(d: Deps): vscode.Disposable[] {
       }
     }),
 
+    // Abre sem perguntar ao catálogo (LIST): no servidor da empresa algumas listagens
+    // fazem cair a sessão. O CWD (só ligação de controlo) diz se é uma biblioteca.
     cmd("mainframeFtps.openJobDataset", async (node: JobDsNode) => {
       if (node?.kind !== "dd") {
         return;
@@ -443,24 +302,28 @@ export function registerJobView(d: Deps): vscode.Disposable[] {
         await vscode.commands.executeCommand("mainframeFtps.openDataset", target);
         return;
       }
-      await session.ensureConnected();
-      let a = provider.attrsOf(dd.base);
-      if (!a) {
-        a = await provider.fetch(dd.base, !!dd.gdg, false); // clique do utilizador: pode perguntar se cair
-        provider.changed();
-      }
-      if (!a) {
-        vscode.window.showWarningMessage(`${dd.base} does not exist (not found in the catalog).`);
+      if (!dd.gdg && (await session.isPartitioned(dd.base))) {
+        provider.markLibrary(dd.base);
+        const members = parseMemberList(await session.listMembersRaw(dd.base), dd.base);
+        if (!members.length) {
+          vscode.window.showInformationMessage(`${dd.base} is an empty library.`);
+          return;
+        }
+        if (isLoadLibrary(dd.base)) {
+          vscode.window.showInformationMessage(`${dd.base} is a load library: its members cannot be opened as text.`);
+          return;
+        }
+        const pick = await vscode.window.showQuickPick(
+          members.map((m) => m.name),
+          { title: `${dd.base}: choose a member`, placeHolder: "Member" }
+        );
+        if (pick) {
+          const target: MfNode = { kind: "member", info: { pds: dd.base, name: pick } };
+          await vscode.commands.executeCommand("mainframeFtps.openDataset", target);
+        }
         return;
       }
-      if (a.dsorg.startsWith("PO")) {
-        // biblioteca sem membro: a lista passa a mostrá-la expansível
-        provider.changed();
-        vscode.window.setStatusBarMessage(`$(library) ${dd.base} is a library: expand it to see the members`, 4000);
-        return;
-      }
-      // geração relativa (0, -1): abre essa geração
-      const info: DsInfo = dd.gdg ? { ...a, name: dd.dsn } : a;
+      const info: DsInfo = { name: dd.dsn, dsorg: "PS", recfm: "", lrecl: 0, blksize: 0, volume: "", referred: "", migrated: false };
       await vscode.commands.executeCommand("mainframeFtps.openDataset", { kind: "ds", info } as MfNode);
     }),
   ];

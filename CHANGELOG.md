@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.6
+- **In this job** no longer looks data sets up in the catalog: the **Check data sets** button is gone. On the company server some catalog listings made the session drop.
+- Clicking a data set opens it directly. If it is a library, a list of its members appears to choose one (and the library can then be expanded in the view). This check uses only the control connection (`CWD`), not a listing.
+- Members of load libraries (`…LOAD…`, `LINKLIB`) are not opened as text.
+
 ## 0.6.5
 - **Check data sets** looks each data set up with a wildcard (`NAME*`), like the Data sets view, instead of the exact name. Listing the exact name of some data sets made the server reset the connection and closed the session.
 

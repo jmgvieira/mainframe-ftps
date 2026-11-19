@@ -294,9 +294,9 @@ Os comandos da vista Data sets, registados por `registerBrowse()`: filtros, abri
 
 Lê um JCL e devolve os data sets por step (`parseJcl()`). Não usa o VS Code, por isso pode ser testado só com node. Junta as linhas de continuação (operando acabado em vírgula), ignora as colunas 73–80, os comentários `//*` e os dados instream (`DD *` até `/*` ou `//`, `DD DATA` até `/*` ou ao `DLM=`). Resolve os símbolos dos `SET` (e os valores por omissão de um `PROC` instream) com `resolveSymbols()`: `&HLQ..DADOS` dá `PROD.DADOS`. Deixa de fora `&&TEMP`, `SYSOUT`, `DUMMY`, `NULLFILE` e referências `*.STEP.DD`. `JCLLIB` e `JOBLIB` ficam num grupo `JOB` no início.
 
-### `jobview.ts` (408 linhas)
+### `jobview.ts` (330 linhas)
 
-A vista **In this job**. `registerJobView()` segue o editor ativo: quando é JCL (`looksLikeJcl()`: linguagem, extensão `.jcl` ou um cartão JOB/EXEC nas primeiras linhas), volta a ler o texto (também ao escrever, com 500 ms de espera). Outros ficheiros não apagam a lista, para se poder abrir o SYSIN e voltar. O `JobDatasetsProvider` procura cada data set no catálogo, um de cada vez e só com a ligação aberta, e guarda os atributos em `attrs` (`null` = não existe). Os que não existiam voltam a ser procurados quando um job termina (`JobsProvider.onDidFinish`). Abrir reutiliza o comando `mainframeFtps.openDataset` da vista Data sets.
+A vista **In this job**. `registerJobView()` segue o editor ativo: quando é JCL (`looksLikeJcl()`: linguagem, extensão `.jcl` ou um cartão JOB/EXEC nas primeiras linhas), volta a ler o texto (também ao escrever, com 500 ms de espera). Outros ficheiros não apagam a lista, para se poder abrir o SYSIN e voltar; fechar o separador do JCL limpa-a (`tabGroups.onDidChangeTabs`). A vista **não faz LIST ao catálogo**: no servidor da empresa algumas listagens fazem o servidor cortar a ligação de dados, e o basic-ftp fecha então a sessão inteira (0.6.0–0.6.5). Ao clicar, `session.isPartitioned()` usa só um `CWD` (ligação de controlo: um PDS responde "is a partitioned data set"); uma biblioteca mostra os membros num quick pick e passa a expandir-se na árvore, o resto abre com `mainframeFtps.openDataset`.
 
 ### `jobs.ts` (264 linhas)
 
