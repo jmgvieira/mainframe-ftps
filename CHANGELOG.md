@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.6.11
+- Fix: 0.6.9–0.6.10 failed to activate on some VS Code versions (`CANNOT use API proposal: textDocumentEncoding`). The `encoding` option is no longer used; the UTF-8 BOM alone makes VS Code detect UTF-8.
+
 ## 0.6.10
 - Fix: 0.6.8–0.6.9 limited TLS to 1.2 and could not connect to servers that only accept TLS 1.3 (`TLSV1_ALERT_PROTOCOL_VERSION`). `mainframeFtps.tlsMaxVersion` is now `auto` by default.
 - New fix for `534 TLS negotiation failed` / `ECONNRESET (data socket)`: with TLS 1.3 each session ticket is used only once. All tickets received (control and data connections) are kept, and every data connection uses a new one.

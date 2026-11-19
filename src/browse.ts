@@ -523,10 +523,8 @@ function fakeDs(name: string, dsorg: string): DsInfo {
 }
 
 
-/** Abre o ficheiro em UTF-8 (opção encoding do VS Code 1.100+; versões antigas ignoram-na e usam o BOM). */
+/** Abre o ficheiro local. O BOM UTF-8 gravado por localBytes() faz o VS Code detetar UTF-8 sozinho
+ *  (não usa a opção `encoding`, que é API experimental em versões antigas). */
 export function openUtf8(uri: vscode.Uri): Thenable<vscode.TextDocument> {
-  return (vscode.workspace.openTextDocument as (u: vscode.Uri, o?: { encoding: string }) => Thenable<vscode.TextDocument>)(
-    uri,
-    { encoding: "utf8bom" }
-  );
+  return vscode.workspace.openTextDocument(uri);
 }
