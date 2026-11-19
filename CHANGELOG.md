@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.10
+- Fix: 0.6.8–0.6.9 limited TLS to 1.2 and could not connect to servers that only accept TLS 1.3 (`TLSV1_ALERT_PROTOCOL_VERSION`). `mainframeFtps.tlsMaxVersion` is now `auto` by default.
+- New fix for `534 TLS negotiation failed` / `ECONNRESET (data socket)`: with TLS 1.3 each session ticket is used only once. All tickets received (control and data connections) are kept, and every data connection uses a new one.
+
 ## 0.6.9
 - Local copies are written as UTF-8 **with BOM** and opened as UTF-8, so `£`, `€` and accented letters show correctly even when VS Code is set to another encoding (`files.encoding` = ISO 8859-1 showed `£` as `Â£`).
 - Before saving to the mainframe, the extension warns if the text looks badly decoded (`Â£`, `Ã©`…), which would damage the data set.

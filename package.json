@@ -2,7 +2,7 @@
   "name": "mainframe-ftps",
   "displayName": "Mainframe FTPS (z/OS)",
   "description": "Browse z/OS data sets, edit members with automatic save to the PDS, submit jobs and view the spool, over a single FTPS session with keepalive and PIN + token login.",
-  "version": "0.6.9",
+  "version": "0.6.10",
   "publisher": "JorgeMiguel",
   "license": "MIT",
   "icon": "icon.png",
@@ -607,10 +607,10 @@
         },
         "mainframeFtps.tlsMaxVersion": {
           "type": "string",
-          "enum": ["TLSv1.2", "TLSv1.3"],
-          "default": "TLSv1.2",
+          "enum": ["auto", "TLSv1.2", "TLSv1.3"],
+          "default": "auto",
           "order": 5,
-          "description": "Highest TLS version to use. TLSv1.2 avoids \"534 TLS negotiation failed\" and ECONNRESET on data connections with z/OS."
+          "description": "Highest TLS version to use. auto lets client and server agree (recommended)."
         },
         "mainframeFtps.user": {
           "type": "string",

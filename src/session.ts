@@ -132,11 +132,13 @@ export class FtpSession implements vscode.Disposable {
         secureOptions: {
           rejectUnauthorized: cfg.rejectUnauthorized,
           servername: cfg.tlsServerName || undefined,
-          // Com TLS 1.3 a retoma de sessão nas ligações de dados falha no z/OS (534 / ECONNRESET).
-          maxVersion: cfg.tlsMaxVersion === "TLSv1.3" ? "TLSv1.3" : "TLSv1.2",
+          // por omissão a versão é negociada (o servidor da empresa só aceita TLS 1.3)
+          ...(cfg.tlsMaxVersion === "TLSv1.2" || cfg.tlsMaxVersion === "TLSv1.3"
+            ? { maxVersion: cfg.tlsMaxVersion as tls.SecureVersion }
+            : {}),
         },
       });
-      pinControlSession(client);
+      pinControlSession(client, (m) => this.log.appendLine(m));
       const ctl = client.ftp.socket as tls.TLSSocket;
       if (typeof ctl.getProtocol === "function") {
         this.log.appendLine(`  TLS ${ctl.getProtocol() ?? "?"} · ${ctl.getCipher()?.name ?? "?"}`);
@@ -722,22 +724,43 @@ export function quoteDsn(dsn: string): string {
 }
 
 /**
- * As ligações de dados do z/OS têm de retomar a sessão TLS da ligação de controlo.
- * O basic-ftp guarda a sessão de cada ligação de dados por cima dessa (FtpContext.tlsSessionStore),
- * e a ligação seguinte é recusada. Aqui a sessão fica sempre a da ligação de controlo.
+ * As ligações de dados do z/OS têm de retomar a sessão TLS. Em TLS 1.3 cada "bilhete"
+ * de sessão só serve uma vez; o basic-ftp guardava só o último (FtpContext.tlsSessionStore)
+ * e, se o bilhete da ligação anterior ainda não tinha chegado, reutilizava um já gasto:
+ * o servidor recusava ("534 TLS negotiation failed" ou ECONNRESET). Aqui os bilhetes
+ * recebidos (controlo e dados) ficam numa fila e cada ligação de dados usa um novo.
  */
-function pinControlSession(client: Client): void {
+export function pinControlSession(client: Client, log?: (s: string) => void): void {
   const ftp = client.ftp as any;
   const control = ftp.socket as tls.TLSSocket;
   if (typeof control.getSession !== "function") {
     return;
   }
-  let session: Buffer | undefined = control.getSession();
-  control.on("session", (s: Buffer) => (session = s));
+  const unused: Buffer[] = [];
+  const first = control.getSession();
+  if (first) {
+    unused.push(first);
+  }
+  control.on("session", (s: Buffer) => unused.push(s));
+  let last: Buffer | undefined = first;
   Object.defineProperty(ftp, "tlsSessionStore", {
     configurable: true,
-    get: () => session,
-    set: () => undefined, // ignora as sessões das ligações de dados
+    get: () => {
+      const next = unused.shift();
+      if (next) {
+        last = next;
+        return next;
+      }
+      if (control.getProtocol() === "TLSv1.3") {
+        log?.("  TLS: no unused session ticket, reusing the last one"); // em TLS 1.2 é o normal
+      }
+      return last;
+    },
+    set: (s: Buffer | undefined) => {
+      if (s) {
+        unused.push(s); // bilhete enviado numa ligação de dados
+      }
+    },
   });
 }
 

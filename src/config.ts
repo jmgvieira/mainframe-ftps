@@ -7,7 +7,7 @@ export interface MfConfig {
   tlsMode: "explicit" | "implicit";
   rejectUnauthorized: boolean;
   tlsServerName: string;
-  /** Versão máxima de TLS (TLSv1.2 por omissão: o z/OS recusa retomar sessões TLS 1.3 nas ligações de dados). */
+  /** Versão máxima de TLS: auto (negociada), TLSv1.2 ou TLSv1.3. */
   tlsMaxVersion: string;
   user: string;
   passcodeOrder: "pinThenToken" | "tokenThenPin";
@@ -132,7 +132,7 @@ export function getConfig(): MfConfig {
     tlsMode: c.get("tlsMode", "explicit"),
     rejectUnauthorized: c.get("rejectUnauthorizedCertificates", true),
     tlsServerName: c.get("tlsServerName", ""),
-    tlsMaxVersion: c.get("tlsMaxVersion", "TLSv1.2"),
+    tlsMaxVersion: c.get("tlsMaxVersion", "auto"),
     user: c.get("user", ""),
     passcodeOrder: c.get("passcodeOrder", "pinThenToken"),
     rememberPin: c.get("rememberPin", false),
