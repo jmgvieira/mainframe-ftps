@@ -310,18 +310,40 @@ export class FtpSession implements vscode.Disposable {
    * Executa uma operação com a sessão. Se a ligação tiver caído, pede novo token,
    * volta a ligar e repete a operação uma vez.
    */
-  run<T>(label: string, op: (client: Client) => Promise<T>): Promise<T> {
+  run<T>(label: string, op: (client: Client) => Promise<T>, opts?: { quiet?: boolean }): Promise<T> {
     return this.enqueue(async () => {
       await this.ensureConnected();
       this.lastActivity = Date.now();
       try {
         return await op(this.client!);
-      } catch (err) {
+      } catch (first) {
+        let err = first;
+        // Só a ligação de dados falhou: se a sessão responde, repete uma vez sem desligar.
+        if (isDataSocketError(err) && this.client && !this.client.closed) {
+          const alive = await this.client.send("NOOP").then(
+            () => true,
+            () => false
+          );
+          if (alive) {
+            this.log.appendLine(`[${ts()}] ${label}: data connection failed (${errText(err)}); retrying.`);
+            try {
+              return await op(this.client!);
+            } catch (second) {
+              err = second;
+              if (isDataSocketError(err) && this.client && !this.client.closed) {
+                throw err; // a sessão continua ligada; o erro fica só nesta operação
+              }
+            }
+          }
+        }
         if (!isConnectionError(err, this.client)) {
           throw err;
         }
         this.log.appendLine(`[${ts()}] ${label}: connection lost (${errText(err)}).`);
         this.disconnect();
+        if (opts?.quiet) {
+          throw new CancelledError(); // verificações em segundo plano não perguntam nada
+        }
         const again = await vscode.window.showWarningMessage(
           `The mainframe connection dropped during "${label}". Reconnect and retry?`,
           "Reconnect"
@@ -369,7 +391,7 @@ export class FtpSession implements vscode.Disposable {
    * Listagem MVS de data sets (como o ISPF 3.4). Devolve o texto em bruto e o
    * diretório de trabalho usado, para completar nomes relativos.
    */
-  async listDatasetsRaw(pattern: string): Promise<{ raw: string; cwd: string }> {
+  async listDatasetsRaw(pattern: string, quiet = false): Promise<{ raw: string; cwd: string }> {
     return this.run(`list ${pattern}`, async (c) => {
       await this.sendLogged(c, "SITE FILETYPE=SEQ");
       const p = pattern.trim().toUpperCase().replace(/^'+|'+$/g, "");
@@ -391,7 +413,7 @@ export class FtpSession implements vscode.Disposable {
       } finally {
         await this.cdHome(c);
       }
-    });
+    }, { quiet });
   }
 
   /** Listagem dos membros de um PDS (com estatísticas ISPF quando existem). */
@@ -668,6 +690,11 @@ async function rawList(c: Client, command: string): Promise<string> {
 export function quoteDsn(dsn: string): string {
   const d = dsn.trim().replace(/^'+|'+$/g, "");
   return `'${d.toUpperCase()}'`;
+}
+
+/** Erro só na ligação de dados (listagem/transferência); a sessão pode continuar viva. */
+function isDataSocketError(err: unknown): boolean {
+  return /data socket/i.test(errText(err));
 }
 
 function isConnectionError(err: unknown, client: Client | undefined): boolean {

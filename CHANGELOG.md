@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.2
+- A failure in the data connection only (for example `ECONNRESET (data socket)` while listing) no longer drops the whole session: the extension checks the session with `NOOP` and retries the operation once.
+- The checks made by **In this job** never ask to reconnect. If one data set cannot be checked, the others are still checked; it is tried again on **Refresh**.
+
 ## 0.6.1
 - **In this job** is cleared as soon as the JCL tab is closed (it used to wait until VS Code released the file, which could take minutes).
 - **Refresh** in **In this job** no longer asks for PIN + token: without a connection it only reads the JCL again. Connect to check which data sets exist.

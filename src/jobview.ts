@@ -36,6 +36,8 @@ export class JobDatasetsProvider implements vscode.TreeDataProvider<JobDsNode>, 
   info: JclInfo | undefined;
   /** Atributos por data set: DsInfo, null = não existe, ausente = por verificar. */
   private attrs = new Map<string, DsInfo | null>();
+  /** Data sets cuja verificação falhou (não se repete até ao Refresh). */
+  private failed = new Set<string>();
   private checking = false;
   private recheck = false;
 
@@ -58,6 +60,7 @@ export class JobDatasetsProvider implements vscode.TreeDataProvider<JobDsNode>, 
   }
 
   refresh(all: boolean): void {
+    this.failed.clear();
     if (all) {
       this.attrs.clear();
     } else {
@@ -72,12 +75,12 @@ export class JobDatasetsProvider implements vscode.TreeDataProvider<JobDsNode>, 
   }
 
   /** Procura um data set no catálogo (pela ligação aberta). */
-  async fetch(base: string, gdg = false): Promise<DsInfo | null> {
-    const { raw, cwd } = await this.session.listDatasetsRaw(base);
+  async fetch(base: string, gdg = false, quiet = true): Promise<DsInfo | null> {
+    const { raw, cwd } = await this.session.listDatasetsRaw(base, quiet);
     let found = parseDatasetList(raw, cwd).find((d) => d.name === base) ?? null;
     if (!found && gdg) {
       // base de um GDG: não aparece na listagem, as gerações sim (BASE.G0001V00)
-      const g = await this.session.listDatasetsRaw(`${base}.G*`);
+      const g = await this.session.listDatasetsRaw(`${base}.G*`, quiet);
       const gens = parseDatasetList(g.raw, g.cwd).filter((d) => /\.G\d{4}V\d{2}$/.test(d.name));
       if (gens.length) {
         found = { ...gens[gens.length - 1], name: base };
@@ -100,7 +103,7 @@ export class JobDatasetsProvider implements vscode.TreeDataProvider<JobDsNode>, 
         const names = new Map<string, boolean>(); // nome → é GDG
         for (const s of this.info?.steps ?? []) {
           for (const dd of s.dds) {
-            if (!dd.unresolved && !this.attrs.has(dd.base)) {
+            if (!dd.unresolved && !this.attrs.has(dd.base) && !this.failed.has(dd.base)) {
               names.set(dd.base, names.get(dd.base) || !!dd.gdg);
             }
           }
@@ -113,10 +116,12 @@ export class JobDatasetsProvider implements vscode.TreeDataProvider<JobDsNode>, 
             await this.fetch(base, gdg);
             this._onDidChange.fire(undefined);
           } catch (err) {
-            if (!(err instanceof CancelledError)) {
-              this.log.appendLine(`Could not check ${base}: ${errText(err)}`);
+            if (err instanceof CancelledError || !this.session.isConnected) {
+              break;
             }
-            break;
+            // falhou só este: passa ao seguinte
+            this.failed.add(base);
+            this.log.appendLine(`Could not check ${base}: ${errText(err)}`);
           }
         }
       } while (this.recheck && this.session.isConnected);
@@ -413,7 +418,7 @@ export function registerJobView(d: Deps): vscode.Disposable[] {
       await session.ensureConnected();
       let a = provider.attrsOf(dd.base);
       if (!a) {
-        a = await provider.fetch(dd.base, !!dd.gdg);
+        a = await provider.fetch(dd.base, !!dd.gdg, false); // clique do utilizador: pode perguntar se cair
         provider.refresh(false);
       }
       if (!a) {
