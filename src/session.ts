@@ -736,6 +736,20 @@ export function pinControlSession(client: Client, log?: (s: string) => void): vo
   if (typeof control.getSession !== "function") {
     return;
   }
+  // Um erro só na ligação de dados (ex.: o RACF recusa a listagem de um data set sem acesso e o
+  // servidor corta a ligação) fecharia a sessão inteira. Fica só na operação; a sessão continua.
+  const origSetup = ftp._setupDefaultErrorHandlers;
+  ftp._setupDefaultErrorHandlers = function (socket: any, identifier: string) {
+    if (identifier !== "data socket") {
+      return origSetup.call(this, socket, identifier);
+    }
+    socket.on("error", (e: Error) => {
+      e.message += ` (${identifier})`;
+    });
+    socket.once("timeout", () => {
+      socket.destroy();
+    });
+  };
   const unused: Buffer[] = [];
   const first = control.getSession();
   if (first) {

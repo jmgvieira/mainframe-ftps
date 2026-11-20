@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.6.12
+- Fix: listing a data set you have no access to (or that the server refuses) no longer drops the session. An error on the data connection now only fails that one operation; the session stays connected.
+
 ## 0.6.11
 - Fix: 0.6.9–0.6.10 failed to activate on some VS Code versions (`CANNOT use API proposal: textDocumentEncoding`). The `encoding` option is no longer used; the UTF-8 BOM alone makes VS Code detect UTF-8.
 
