@@ -2,7 +2,7 @@
   "name": "mainframe-ftps",
   "displayName": "Mainframe FTPS (z/OS)",
   "description": "Browse z/OS data sets, edit members with automatic save to the PDS, submit jobs and view the spool, over a single FTPS session with keepalive and PIN + token login.",
-  "version": "0.6.13",
+  "version": "0.6.14",
   "publisher": "JorgeMiguel",
   "license": "MIT",
   "icon": "icon.png",

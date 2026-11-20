@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.6.14
+- Fix for `534 TLS negotiation failed` when creating a data set: when no unused TLS 1.3 session ticket is left, the extension now waits up to 1.5 s for one still in transit, and otherwise opens the data connection with a full handshake instead of reusing a spent ticket (which the server refused).
+
 ## 0.6.13
 - Fix: saving to a data set that is in use (or refused by the server) no longer drops the session. If the control connection still answers, the session is kept and only that operation fails, with a clear message.
 - Save, create data set and submit are no longer retried automatically after a data-connection error.

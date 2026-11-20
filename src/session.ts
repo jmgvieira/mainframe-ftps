@@ -767,24 +767,45 @@ export function pinControlSession(client: Client, log?: (s: string) => void): vo
   if (first) {
     unused.push(first);
   }
-  control.on("session", (s: Buffer) => unused.push(s));
-  let last: Buffer | undefined = first;
+  const waiters: Array<() => void> = [];
+  const push = (s: Buffer) => {
+    unused.push(s);
+    waiters.splice(0).forEach((w) => w());
+  };
+  control.on("session", push);
+  const tls13 = () => control.getProtocol() === "TLSv1.3";
+  // Em TLS 1.3 cada bilhete só serve uma vez. Antes de abrir uma ligação de dados, se não há
+  // nenhum guardado, espera um pouco por um que ainda venha a caminho.
+  const origPrepare = client.prepareTransfer;
+  client.prepareTransfer = async (f: any) => {
+    if (tls13() && unused.length === 0) {
+      await new Promise<void>((resolve) => {
+        const t = setTimeout(resolve, 1500);
+        waiters.push(() => {
+          clearTimeout(t);
+          resolve();
+        });
+      });
+    }
+    return origPrepare(f);
+  };
   Object.defineProperty(ftp, "tlsSessionStore", {
     configurable: true,
     get: () => {
       const next = unused.shift();
       if (next) {
-        last = next;
         return next;
       }
-      if (control.getProtocol() === "TLSv1.3") {
-        log?.("  TLS: no unused session ticket, reusing the last one"); // em TLS 1.2 é o normal
+      if (tls13()) {
+        // Reutilizar um bilhete gasto dava "534 TLS negotiation failed": negoceia sem retomar.
+        log?.("  TLS: no unused session ticket, full handshake");
+        return Buffer.alloc(0); // sessão vazia = sem retoma (undefined voltaria à sessão de controlo)
       }
-      return last;
+      return control.getSession(); // TLS 1.2: a sessão pode ser reutilizada
     },
     set: (s: Buffer | undefined) => {
       if (s) {
-        unused.push(s); // bilhete enviado numa ligação de dados
+        push(s); // bilhete enviado numa ligação de dados
       }
     },
   });
