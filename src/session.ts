@@ -330,10 +330,7 @@ export class FtpSession implements vscode.Disposable {
         let err = first;
         // Só a ligação de dados falhou: se a sessão responde, repete uma vez sem desligar.
         if (!opts?.noRetry && isDataSocketError(err) && this.client && !this.client.closed) {
-          const alive = await this.client.send("NOOP").then(
-            () => true,
-            () => false
-          );
+          const alive = await probeAlive(this.client);
           if (alive) {
             this.log.appendLine(`[${ts()}] ${label}: data connection failed (${errText(err)}); retrying.`);
             try {
@@ -352,10 +349,7 @@ export class FtpSession implements vscode.Disposable {
         // O erro parece de ligação, mas se a sessão de controlo responde (ex.: data set em uso, o
         // servidor corta a ligação de dados), mantém-na e falha só esta operação.
         if (this.client && !this.client.closed && !(err instanceof FTPError)) {
-          const alive = await this.client.send("NOOP").then(
-            () => true,
-            () => false
-          );
+          const alive = await probeAlive(this.client);
           if (alive) {
             this.log.appendLine(`[${ts()}] ${label}: failed (${errText(err)}); session still connected.`);
             throw new Error(`${label}: the server closed the data connection (data set in use, no access or refused). The session is still connected.`);
@@ -755,8 +749,14 @@ export function pinControlSession(client: Client, log?: (s: string) => void): vo
     if (identifier !== "data socket") {
       return origSetup.call(this, socket, identifier);
     }
+    const self = this;
     socket.on("error", (e: Error) => {
       e.message += ` (${identifier})`;
+      // Falha a tarefa em curso já (o servidor pode nunca responder no controlo, p.ex. se recusou a
+      // ligação de dados), em vez de esperar pelo timeout, que fecharia a sessão.
+      if (self._task) {
+        self._passToHandler(e);
+      }
     });
     socket.once("timeout", () => {
       socket.destroy();
@@ -809,6 +809,27 @@ export function pinControlSession(client: Client, log?: (s: string) => void): vo
       }
     },
   });
+}
+
+/** A sessão de controlo ainda responde? Tolera respostas atrasadas da operação falhada (FTPError) e consome-as. */
+async function probeAlive(client: Client): Promise<boolean> {
+  // Respostas atrasadas da operação falhada (125, 226, 550…) chegam agora e são descartadas porque
+  // não há tarefa em curso; só depois se testa a sessão.
+  await new Promise((r) => setTimeout(r, 700));
+  for (let i = 0; i < 3; i++) {
+    try {
+      const res = await client.send("NOOP");
+      if (res.code === 200) {
+        return true;
+      }
+      await new Promise((r) => setTimeout(r, 300));
+    } catch (e) {
+      if (!(e instanceof FTPError)) {
+        return false;
+      }
+    }
+  }
+  return false;
 }
 
 /** Erro só na ligação de dados (listagem/transferência); a sessão pode continuar viva. */

@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.6.15
+- Fix: saving a data set that is open for edit elsewhere (e.g. in a TSO/ISPF session) dropped the session (`Client network socket disconnected before secure TLS connection was established (data socket)`). The failed operation now ends immediately with an error and the session stays connected. Late replies from the refused operation are discarded before the session is checked, so the next command is not confused by them.
+
 ## 0.6.14
 - Fix for `534 TLS negotiation failed` when creating a data set: when no unused TLS 1.3 session ticket is left, the extension now waits up to 1.5 s for one still in transit, and otherwise opens the data connection with a full handshake instead of reusing a spent ticket (which the server refused).
 
