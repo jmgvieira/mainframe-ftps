@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.13
+- Fix: saving to a data set that is in use (or refused by the server) no longer drops the session. If the control connection still answers, the session is kept and only that operation fails, with a clear message.
+- Save, create data set and submit are no longer retried automatically after a data-connection error.
+
 ## 0.6.12
 - Fix: listing a data set you have no access to (or that the server refuses) no longer drops the session. An error on the data connection now only fails that one operation; the session stays connected.
 

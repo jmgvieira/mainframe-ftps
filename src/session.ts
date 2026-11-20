@@ -320,7 +320,7 @@ export class FtpSession implements vscode.Disposable {
    * Executa uma operação com a sessão. Se a ligação tiver caído, pede novo token,
    * volta a ligar e repete a operação uma vez.
    */
-  run<T>(label: string, op: (client: Client) => Promise<T>, opts?: { quiet?: boolean }): Promise<T> {
+  run<T>(label: string, op: (client: Client) => Promise<T>, opts?: { quiet?: boolean; noRetry?: boolean }): Promise<T> {
     return this.enqueue(async () => {
       await this.ensureConnected();
       this.lastActivity = Date.now();
@@ -329,7 +329,7 @@ export class FtpSession implements vscode.Disposable {
       } catch (first) {
         let err = first;
         // Só a ligação de dados falhou: se a sessão responde, repete uma vez sem desligar.
-        if (isDataSocketError(err) && this.client && !this.client.closed) {
+        if (!opts?.noRetry && isDataSocketError(err) && this.client && !this.client.closed) {
           const alive = await this.client.send("NOOP").then(
             () => true,
             () => false
@@ -348,6 +348,18 @@ export class FtpSession implements vscode.Disposable {
         }
         if (!isConnectionError(err, this.client)) {
           throw err;
+        }
+        // O erro parece de ligação, mas se a sessão de controlo responde (ex.: data set em uso, o
+        // servidor corta a ligação de dados), mantém-na e falha só esta operação.
+        if (this.client && !this.client.closed && !(err instanceof FTPError)) {
+          const alive = await this.client.send("NOOP").then(
+            () => true,
+            () => false
+          );
+          if (alive) {
+            this.log.appendLine(`[${ts()}] ${label}: failed (${errText(err)}); session still connected.`);
+            throw new Error(`${label}: the server closed the data connection (data set in use, no access or refused). The session is still connected.`);
+          }
         }
         this.log.appendLine(`[${ts()}] ${label}: connection lost (${errText(err)}).`);
         this.disconnect();
@@ -384,7 +396,7 @@ export class FtpSession implements vscode.Disposable {
       const res = await c.uploadFrom(Readable.from([data]), quoteDsn(target));
       this.log.appendLine(`[${ts()}] Saved ${target}: ${oneLine(res.message)}`);
       return res.message;
-    });
+    }, { noRetry: true });
   }
 
   async downloadText(target: string): Promise<Buffer> {
@@ -491,7 +503,7 @@ export class FtpSession implements vscode.Disposable {
         await c.uploadFrom(Readable.from([Buffer.alloc(0)]), quoteDsn(dsn));
       }
       this.log.appendLine(`[${ts()}] Allocated ${dsn}`);
-    });
+    }, { noRetry: true });
   }
 
   /** Renomeia um data set ou membro (nomes completos, ex.: A.B(X) -> A.B(Y)). */
@@ -531,7 +543,7 @@ export class FtpSession implements vscode.Disposable {
       } finally {
         await c.send("SITE FILETYPE=SEQ").catch(() => undefined);
       }
-    });
+    }, { noRetry: true });
   }
 
   /**
