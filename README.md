@@ -164,3 +164,8 @@ npm run package
 
 For developers of the extension: see the [developer guide](docs/GUIA-DO-DEVELOPER.md) (in Portuguese:
 code structure, build, debugging and publishing).
+
+## Large data sets
+
+- Opening a sequential data set above `mainframeFtps.largeDatasetMB` (default 20 MB, estimated from the list) asks first: preview the start or download all.
+- **Preview start (read-only)** is also in the right-click menu of any sequential data set or member. It reads only the first `mainframeFtps.previewLines` lines (default 1000), shows them in a read-only tab and saves nothing, so it can never truncate the data set.

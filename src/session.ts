@@ -393,6 +393,29 @@ export class FtpSession implements vscode.Disposable {
     }, { noRetry: true });
   }
 
+  /**
+   * Lê só o início de um data set: pára a ligação de dados quando já tem linhas a mais, em vez de
+   * descarregar tudo. Devolve o texto em bruto e se o data set tinha mais.
+   */
+  async downloadHead(target: string, maxLines: number): Promise<{ data: Buffer; truncated: boolean }> {
+    return this.run(
+      `preview ${target}`,
+      async (c) => {
+        await c.send("TYPE A");
+        await this.sendLogged(c, "SITE FILETYPE=SEQ");
+        const r = await readHead(c, quoteDsn(target), maxLines);
+        if (r.truncated) {
+          this.log.appendLine(`  preview: stopped after ${maxLines} lines`);
+          if (!(await probeAlive(c))) {
+            throw new Error("Server closed the connection after the preview");
+          }
+        }
+        return r;
+      },
+      { noRetry: true }
+    );
+  }
+
   async downloadText(target: string): Promise<Buffer> {
     return this.run(`read ${target}`, async (c) => {
       await c.send("TYPE A");
@@ -809,6 +832,39 @@ export function pinControlSession(client: Client, log?: (s: string) => void): vo
       }
     },
   });
+}
+
+/** Descarrega até `maxLines` linhas; ao passar o limite destrói a ligação de dados (a sessão fica viva). */
+export async function readHead(c: Client, remote: string, maxLines: number): Promise<{ data: Buffer; truncated: boolean }> {
+  const chunks: Buffer[] = [];
+  let lines = 0;
+  let truncated = false;
+  const sink = new Writable({
+    write(chunk: Buffer, _enc, cb) {
+      chunks.push(Buffer.from(chunk));
+      for (const b of chunk) {
+        if (b === 10) {
+          lines++;
+        }
+      }
+      if (!truncated && lines > maxLines) {
+        truncated = true;
+        (c.ftp as any).dataSocket?.destroy();
+      }
+      cb();
+    },
+    destroy(_err, cb) {
+      cb(null); // sem erro: a biblioteca fecharia a sessão
+    },
+  });
+  try {
+    await c.downloadTo(sink, remote);
+  } catch (err) {
+    if (!truncated) {
+      throw err;
+    }
+  }
+  return { data: Buffer.concat(chunks), truncated };
 }
 
 /** A sessão de controlo ainda responde? Tolera respostas atrasadas da operação falhada (FTPError) e consome-as. */

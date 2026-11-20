@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.0
+- Large data sets: when you open a sequential data set whose estimated size (tracks used × 56 664 bytes) is above `mainframeFtps.largeDatasetMB` (default 20 MB), the extension asks whether to **preview the start** or **download all**. Set it to 0 to never ask. The size is an upper estimate taken from the data set list.
+- New **Preview start (read-only)** command (right-click a sequential data set or a member): reads only the first `mainframeFtps.previewLines` lines (default 1000) and closes the data connection. The preview is a read-only virtual document: nothing is saved on the PC or on the mainframe, so it cannot overwrite the data set. A "Download all" button is offered when the data set has more lines.
+
 ## 0.6.15
 - Fix: saving a data set that is open for edit elsewhere (e.g. in a TSO/ISPF session) dropped the session (`Client network socket disconnected before secure TLS connection was established (data socket)`). The failed operation now ends immediately with an error and the session stays connected. Late replies from the refused operation are discarded before the session is checked, so the next command is not confused by them.
 

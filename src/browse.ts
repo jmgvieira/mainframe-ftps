@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { FtpSession, CancelledError, errText, AllocOptions } from "./session";
-import { DatasetsProvider, MfNode, DsInfo } from "./datasets";
+import { DatasetsProvider, MfNode, DsInfo, estimateBytes, formatBytes } from "./datasets";
 import { TargetMap, IGNORE, validateDsn, validateMember, pdsOf, memberOf, localBase, targetFromPath } from "./mapping";
 import { decode, localBytes } from "./codec";
 import { getConfig } from "./config";
@@ -171,6 +171,72 @@ export function registerBrowse(d: Deps): vscode.Disposable[] {
     }
   }
 
+  // ------------------------------------------------------- pré-visualização (só de leitura)
+
+  const previews = new Map<string, string>();
+  const previewChanged = new vscode.EventEmitter<vscode.Uri>();
+  const previewProvider = vscode.workspace.registerTextDocumentContentProvider("mainframe-preview", {
+    onDidChange: previewChanged.event,
+    provideTextDocumentContent: (uri) => previews.get(uri.path) ?? "",
+  });
+
+  async function previewRemote(target: string): Promise<void> {
+    const cfg = getConfig();
+    const lines = Math.max(10, cfg.previewLines);
+    const { data, truncated } = await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: `Reading the start of ${target}…` },
+      () => session.downloadHead(target, lines)
+    );
+    const all = decode(data, cfg.transferEncoding).replace(/\r\n/g, "\n").split("\n");
+    if (all[all.length - 1] === "") {
+      all.pop();
+    }
+    const text = all.slice(0, lines).join("\n") + "\n";
+    const uri = vscode.Uri.from({ scheme: "mainframe-preview", path: `/${target} [preview]` });
+    previews.set(uri.path, text);
+    previewChanged.fire(uri);
+    const doc = await vscode.workspace.openTextDocument(uri);
+    await applyLanguage(doc, target).catch(() => undefined);
+    await vscode.window.showTextDocument(doc, { preview: false });
+    d.log.appendLine(`Preview of ${target}: ${Math.min(all.length, lines)} lines${truncated ? " (there is more)" : " (whole data set)"}`);
+    if (truncated) {
+      const a = await vscode.window.showInformationMessage(
+        `Showing the first ${lines} lines of ${target} (read-only, not saved anywhere).`,
+        "Download all"
+      );
+      if (a) {
+        await openRemote(target);
+      }
+    }
+  }
+
+  /** Para data sets grandes pergunta antes de descarregar tudo. Devolve true se já tratou do pedido. */
+  async function guardLarge(info: DsInfo): Promise<boolean> {
+    const cfg = getConfig();
+    const est = estimateBytes(info);
+    if (!cfg.largeDatasetMB || est === undefined || est <= cfg.largeDatasetMB * 1024 * 1024) {
+      return false;
+    }
+    const preview = `Preview first ${cfg.previewLines} lines`;
+    const a = await vscode.window.showWarningMessage(
+      `${info.name} is large (up to about ${formatBytes(est)}).`,
+      {
+        modal: true,
+        detail: "Downloading it all can take a while. The preview is read-only and nothing is saved on the PC or the mainframe.",
+      },
+      preview,
+      "Download all"
+    );
+    if (!a) {
+      return true;
+    }
+    if (a === preview) {
+      await previewRemote(info.name);
+      return true;
+    }
+    return false;
+  }
+
   // ------------------------------------------------------------------ helpers
 
   function targetOf(node: MfNode): string {
@@ -233,6 +299,8 @@ export function registerBrowse(d: Deps): vscode.Disposable[] {
 
   return [
     view,
+    previewProvider,
+    previewChanged,
     vscode.workspace.onDidOpenTextDocument((doc) => void fixLanguage(doc)),
     vscode.window.onDidChangeActiveTextEditor((e) => void updateJclContext(e)),
     session.onDidChangeState(() => {
@@ -301,7 +369,14 @@ export function registerBrowse(d: Deps): vscode.Disposable[] {
         }
         return;
       }
+      if (node.kind === "ds" && (await guardLarge(node.info))) {
+        return;
+      }
       await openRemote(targetOf(node));
+    }),
+
+    cmd("mainframeFtps.previewDataset", async (node: MfNode) => {
+      await previewRemote(targetOf(node));
     }),
 
     cmd("mainframeFtps.newMember", async (node?: MfNode) => {

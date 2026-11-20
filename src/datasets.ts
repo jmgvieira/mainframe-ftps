@@ -10,6 +10,20 @@ export interface DsInfo {
   volume: string;
   referred: string;
   migrated: boolean;
+  /** Pistas usadas (coluna Used da listagem), se conhecidas. */
+  used?: number;
+}
+
+/** Tamanho máximo aproximado de um data set sequencial (pistas usadas × 56 664 bytes de uma 3390). */
+export function estimateBytes(info: DsInfo): number | undefined {
+  if (info.dsorg !== "PS" || info.migrated || info.used === undefined) {
+    return undefined;
+  }
+  return info.used * 56664;
+}
+
+export function formatBytes(n: number): string {
+  return n >= 1024 * 1024 * 1024 ? `${(n / 1024 / 1024 / 1024).toFixed(1)} GB` : `${Math.max(1, Math.round(n / 1024 / 1024))} MB`;
 }
 
 export interface MemberInfo {
@@ -71,6 +85,7 @@ export function parseDatasetList(raw: string, cwd: string): DsInfo[] {
         volume: t[0],
         referred: t[2],
         migrated: false,
+        used: /^\d+$/.test(t[t.length - 6]) ? parseInt(t[t.length - 6], 10) : undefined,
       });
     } else {
       // VSAM, tape, ou atributos indisponíveis

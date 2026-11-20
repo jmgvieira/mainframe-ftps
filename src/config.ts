@@ -19,6 +19,10 @@ export interface MfConfig {
   autoUploadOnSave: boolean;
   /** Pedir confirmação antes de cada gravação no mainframe. */
   confirmUpload: boolean;
+  /** Acima deste tamanho estimado (MB) pergunta antes de descarregar um data set. 0 = nunca. */
+  largeDatasetMB: number;
+  /** Linhas da pré-visualização. */
+  previewLines: number;
   fileExtensions: string[];
   transferEncoding: TransferEncoding;
   hostCodePage: string;
@@ -142,6 +146,8 @@ export function getConfig(): MfConfig {
     siteCommands: c.get("siteCommands", []),
     autoUploadOnSave: c.get("autoUploadOnSave", true),
     confirmUpload: c.get("confirmUpload", true),
+    largeDatasetMB: c.get("largeDatasetMB", 20),
+    previewLines: c.get("previewLines", 1000),
     fileExtensions: c.get("fileExtensions", [".jcl", ".ezt", ".cbl", ".cpy", ".proc"]).map((e) => e.toLowerCase()),
     transferEncoding: c.get<TransferEncoding>("transferEncoding", "iso8859-15"),
     hostCodePage: c.get("hostCodePage", "IBM-1147"),

@@ -2,7 +2,7 @@
   "name": "mainframe-ftps",
   "displayName": "Mainframe FTPS (z/OS)",
   "description": "Browse z/OS data sets, edit members with automatic save to the PDS, submit jobs and view the spool, over a single FTPS session with keepalive and PIN + token login.",
-  "version": "0.6.15",
+  "version": "0.7.0",
   "publisher": "JorgeMiguel",
   "license": "MIT",
   "icon": "icon.png",
@@ -153,6 +153,12 @@
         "title": "Open",
         "category": "Mainframe",
         "icon": "$(go-to-file)"
+      },
+      {
+        "command": "mainframeFtps.previewDataset",
+        "title": "Preview start (read-only)",
+        "category": "Mainframe",
+        "icon": "$(eye)"
       },
       {
         "command": "mainframeFtps.newMember",
@@ -406,6 +412,11 @@
           "group": "1@0"
         },
         {
+          "command": "mainframeFtps.previewDataset",
+          "when": "viewItem =~ /^(mfDsPS|mfMember)$/",
+          "group": "1@1"
+        },
+        {
           "command": "mainframeFtps.submitMember",
           "when": "viewItem =~ /^(mfDsPS|mfMember)$/",
           "group": "inline@1"
@@ -508,6 +519,10 @@
         },
         {
           "command": "mainframeFtps.openDataset",
+          "when": "false"
+        },
+        {
+          "command": "mainframeFtps.previewDataset",
           "when": "false"
         },
         {
@@ -678,6 +693,20 @@
           "default": true,
           "order": 13,
           "description": "Ask for confirmation before every save to the mainframe (Ctrl+S or Save file to mainframe). If you answer no, the file is only saved on the PC."
+        },
+        "mainframeFtps.largeDatasetMB": {
+          "type": "number",
+          "default": 20,
+          "minimum": 0,
+          "order": 14,
+          "description": "When you open a sequential data set whose estimated size is above this many MB, ask whether to download it all or just preview the start. 0 = never ask."
+        },
+        "mainframeFtps.previewLines": {
+          "type": "number",
+          "default": 1000,
+          "minimum": 10,
+          "order": 14,
+          "description": "Number of lines shown by \"Preview start (read-only)\"."
         },
         "mainframeFtps.fileExtensions": {
           "type": "array",
